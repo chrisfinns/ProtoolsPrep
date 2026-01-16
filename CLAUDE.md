@@ -2,6 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Progress Tracking
+
+**IMPORTANT**: This project uses `TODO.md` to track progress between sessions.
+
+- **First action in new session**: Read `TODO.md` to understand current status and next tasks
+- **After completing work**: Update `TODO.md` to reflect what was done and what's next
+- **When creating new coding projects**: Always create a `TODO.md` file with:
+  - Current phase/status
+  - Next up tasks (prioritized)
+  - Completed items
+  - Important notes/constraints
+
+This ensures continuity across sessions and prevents lost context.
+
 ## Project Overview
 
 Pro Tools Session Builder - A macOS desktop application (Python 3.11+ with PySide6) that batch-processes song folders, analyzes audio specs using sox/soxi, and automates Pro Tools session creation via AppleScript UI scripting.
