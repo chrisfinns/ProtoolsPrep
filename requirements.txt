@@ -1,0 +1,11 @@
+# Pro Tools Session Builder - Python Dependencies
+
+# GUI Framework
+PySide6>=6.6.0
+
+# Testing
+pytest>=7.4.0
+pytest-qt>=4.2.0
+
+# Type hints support
+typing-extensions>=4.8.0
