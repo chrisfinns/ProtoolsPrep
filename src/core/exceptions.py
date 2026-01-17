@@ -29,3 +29,8 @@ class AppleScriptError(PTSessionBuilderError):
 class JobExecutionError(PTSessionBuilderError):
     """Workflow step failed during job execution."""
     pass
+
+
+class QueueError(PTSessionBuilderError):
+    """Error during queue operations."""
+    pass

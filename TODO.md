@@ -1,150 +1,129 @@
 # Pro Tools Session Builder - TODO
 
-**Last Updated**: 2026-01-16
-**Current Phase**: Core Layer Complete ✓
+**Last Updated**: 2026-01-16 (Late Evening - AppleScript Testing Phase)
+**Current Phase**: 🧪 APPLESCRIPT VALIDATION - Testing UI automation scripts before full app integration
+
+> **Historical Context**: See [progress.md](progress.md) for a log of completed work across sessions.
+>
+> **Architecture Status**:
+> - Core Layer: ✓ Complete (44 tests, 442 lines)
+> - Queue Layer: ✓ Complete (60 tests, 516 lines)
+> - Pro Tools Layer: ✓ Complete (~950 lines)
+> - UI Layer: ✓ Complete (~480 lines) - **🐛 BUGS FIXED**
+> - **Total Application**: ✓ Ready for manual testing with real Pro Tools
+
+> **Recent Bug Fixes** (2026-01-16):
+> - Fixed `QueueWorker.run()` calling non-existent `get_current_job()` → now calls `get_next()`
+> - Fixed `JobExecutor` callback initialization - now passed to constructor, not `execute()` method
+> - Fixed method names: `complete_current_job()` → `complete_current()`, `fail_current_job()` → `fail_current()`
+> - Fixed `ProToolsWorkflow()` missing required `AppSettings` argument in QueueWorker
+> - **Issue**: Queue start button was not working - jobs stayed pending with "no job running"
+> - **Root Cause**: Four bugs in `QueueWorker` - method name mismatches and missing dependency injection
+> - **Status**: ✅ Fixed - queue should now execute when "Start Queue" button is clicked
 
 ---
 
 ## 🎯 Next Up
 
-### Queue Layer (`src/queue/`)
-- [ ] **QueueManager**: Serial job execution orchestration
-  - Queue data structure (FIFO)
-  - Add/remove/clear operations
-  - Status tracking (pending/running/completed/failed)
-  - Thread-safe operations for UI updates
+### PHASE 1: AppleScript Testing (Individual Scripts) - IN PROGRESS
 
-- [ ] **JobExecutor**: 9-step workflow coordinator
-  - Step 1: Validate SessionSpec (5%)
-  - Step 2: Create output directory (10%)
-  - Step 3: Launch Pro Tools (20%)
-  - Step 4: Create session (30%)
-  - Step 5: Import audio (50%)
-  - Step 6: Import MIDI (70%)
-  - Step 7: Import template (85%)
-  - Step 8: Save session (95%)
-  - Step 9: Complete (100%)
-  - Progress callbacks for UI
-  - Error handling and cleanup
+**Location**: `applescript_tests/` directory
+**Goal**: Validate each AppleScript works correctly with actual Pro Tools UI before integrating into main app
 
-- [ ] **Job Model**: Data class for queue items
-  - SessionSpec reference
-  - Status (pending/running/completed/failed)
-  - Progress percentage
-  - Error messages
-  - Timestamps (queued/started/completed)
+**Testing Resources Created**:
+- ✅ `START_HERE.md` - Quick start guide and workflow
+- ✅ `README.md` - Detailed testing strategy for each script
+- ✅ `ACCESSIBILITY_INSPECTOR_GUIDE.md` - How to inspect UI elements
+- ✅ `TESTING_CHECKLIST.md` - Detailed checklist for documenting findings
+- ✅ 8 test scripts with logging and error handling
 
-### Pro Tools Layer (`src/protools/`)
-- [ ] **AppleScript Templates** (`src/protools/scripts/`)
-  - [ ] `launch_protools.applescript` - Activate app, wait for Dashboard
-  - [ ] `create_session.applescript` - Dashboard → New Session with sample rate/bit depth
-  - [ ] `import_audio.applescript` - File → Import → Audio, **disable Apply SRC**, verify
-  - [ ] `import_midi.applescript` - File → Import → MIDI, enable tempo/key import
-  - [ ] `import_template.applescript` - File → Import → Session Data, **disable Apply SRC**, **dismiss Session Start Time warning**
-  - [ ] `save_session.applescript` - File → Save Session
-  - [ ] `close_session.applescript` - File → Close Session
+**Scripts to Test** (in order):
+- [ ] **test_launch.applescript** - Launch Pro Tools and open Dashboard
+  - Verify: Dashboard window name, menu bar accessibility, Cmd+N behavior
 
-- [ ] **AppleScriptController**: Template execution engine
-  - Load templates from `scripts/` directory
-  - Placeholder substitution (`{session_name}`, `{sample_rate}`, etc.)
-  - Execute via `osascript` subprocess
-  - Parse stderr for errors
-  - Exponential backoff retry logic
-  - Timeout handling
+- [ ] **test_create_session.applescript** - Create new session
+  - Verify: Session name field, sample rate popup/menu items, bit depth popup/menu items
+  - Verify: Session window naming convention
 
-- [ ] **ProToolsWorkflow**: High-level operations
-  - `launch()` - Launch Pro Tools and wait for ready state
-  - `create_session(spec: SessionSpec)` - Create new session with specs
-  - `import_audio(files: list[Path])` - Import audio, disable SRC
-  - `import_midi(files: list[Path])` - Import MIDI with tempo/key
-  - `import_template(template: Path)` - Import session data, handle warnings
-  - `save_session(path: Path)` - Save session file
-  - `close_session()` - Close current session
+- [ ] **test_save_session.applescript** - Save with Cmd+S
+  - Verify: Simple keyboard shortcut works
 
-- [ ] **UIScriptingUtils**: Reliability helpers
-  - `wait_for_window(name: str, timeout: int)` - Poll for window appearance
-  - `wait_for_import_completion(timeout: int)` - Detect import progress completion
-  - `dismiss_warning(text: str)` - Find and dismiss dialog by text
-  - `verify_checkbox(name: str, expected_value: int)` - Verify checkbox state
-  - `cleanup_on_error()` - Press Escape, close session
+- [ ] **test_close_session.applescript** - Close with Cmd+W
+  - Verify: Save dialog handling if unsaved
 
-- [ ] **AppSettings**: Configuration management
-  - JSON persistence to `~/.protools_session_builder_settings.json`
-  - Configurable timing:
-    - `dialog_wait_time` (default: 2s)
-    - `import_completion_timeout` (default: 60s)
-    - `window_appearance_timeout` (default: 10s)
-  - Default root output directory
-  - Last used template path
-  - Accessibility permission check on startup
+- [ ] **test_save_session_as.applescript** - Save to specific location
+  - Verify: Save dialog navigation, filename field, replace handling
 
-### UI Layer (`src/ui/`)
-- [ ] **MainWindow**: PySide6 main application window
-  - Top section: Job creation form
-    - Artist name input
-    - Song name input
-    - Project name input (optional, for album mode)
-    - "Is part of larger project?" checkbox
-    - Source folder selector (browse button)
-    - Template file selector (optional, browse button)
-    - Root output directory selector
-    - "Add to Queue" button
-  - Middle section: Queue table
-    - Columns: Song Name, Artist, Status, Progress
-    - Remove/Clear queue buttons
-    - Start/Pause queue buttons
-  - Bottom section: Progress and logs
-    - Current job progress bar
-    - Real-time log output (scrollable)
-    - Status message display
+- [ ] **test_import_audio.applescript** - Import audio with SRC disabled ⚠️ CRITICAL
+  - Verify: Menu path, import dialog name, "Apply SRC" checkbox existence
+  - Verify: Checkbox exact name, value meanings (0/1), verification works
+  - Verify: Progress window detection
 
-- [ ] **Signal/Slot Connections**
-  - Qt Signals for thread-safe updates from background executor
-  - Progress updates → progress bar + table
-  - Log messages → log output area
-  - Job completion → update table status
-  - Error handling → show dialog with user-friendly message
+- [ ] **test_import_midi.applescript** - Import MIDI files
+  - Verify: Import dialog, tempo/key checkboxes (may not exist)
 
-- [ ] **Worker Thread**
-  - QThread for queue execution (keep UI responsive)
-  - Emit signals for progress/status updates
-  - Handle errors without blocking UI
+- [ ] **test_import_template.applescript** - Import template ⚠️ CRITICAL
+  - Verify: Session Data import dialog, "Apply SRC" in template import
+  - Verify: "Session Start Time" warning appearance and dismissal
 
-### Testing
-- [ ] **Unit Tests** for Queue Layer
-  - `test_queue_manager.py` - Queue operations, thread safety
-  - `test_job_executor.py` - Workflow steps with mocked ProToolsWorkflow
+**Critical Questions to Answer**:
+1. Does "Apply SRC" checkbox exist in audio import? Exact name?
+2. Does "Apply SRC" exist in template import? Same name?
+3. Does "Session Start Time" warning appear? Window name? Dismiss button?
+4. What are exact menu item names for sample rates (48 kHz vs 48.0 kHz vs 48000)?
+5. What are progress window names during import?
 
-- [ ] **Integration Tests**
-  - `test_queue_integration.py` - End-to-end queue execution with mocks
+**After Scripts Validated**:
+- [ ] Document all UI element names in `TESTING_CHECKLIST.md`
+- [ ] Update production scripts in `src/protools/scripts/` with correct names
+- [ ] Update `CLAUDE.md` with UI quirks discovered
+- [ ] Test full script sequence (launch → create → import → save → close)
 
-- [ ] **Manual Testing Checklist**
-  - [ ] Test with real Pro Tools on different sample rates (44.1k, 48k, 96k)
-  - [ ] Verify "Apply SRC" checkbox is disabled and verified
-  - [ ] Test Session Start Time warning dismissal
-  - [ ] Test import completion polling (don't use fixed delays)
+---
+
+### PHASE 2: Manual Testing with Real Pro Tools (After AppleScript validation)
+- [ ] **First Launch Test**
+  - [ ] Run `python src/main.py` to verify app starts
+  - [ ] Check accessibility permissions prompt appears
+  - [ ] Verify welcome message displays in log
+  - [ ] Test all UI controls are responsive
+
+- [ ] **Basic Workflow Test** (44.1kHz/16-bit audio)
+  - [ ] Create test folder with 44.1k/16-bit WAV files
+  - [ ] Add job to queue via UI form
+  - [ ] Start queue and verify Pro Tools launches
+  - [ ] Verify session creation with correct sample rate
+  - [ ] Verify audio import with SRC disabled
+  - [ ] Verify session saves to correct output path
+
+- [ ] **Sample Rate Tests**
+  - [ ] Test with 48kHz/24-bit audio files
+  - [ ] Test with 96kHz/24-bit audio files
+  - [ ] Verify SRC checkbox is disabled and verified in logs
+
+- [ ] **Template Import Test**
+  - [ ] Create job with template file specified
+  - [ ] Verify "Session Start Time" warning is dismissed automatically
+  - [ ] Verify SRC disabled for template import
+  - [ ] Verify session data imports correctly
+
+- [ ] **Album Mode Test**
+  - [ ] Check "Part of larger project" checkbox
+  - [ ] Enter project name
+  - [ ] Verify output path follows album structure: `{root}/{Artist}/{Project}/{Song}/`
+
+- [ ] **Edge Cases**
   - [ ] Test with paths containing spaces
-  - [ ] Verify accessibility permissions prompt
-  - [ ] Test error recovery and cleanup
-  - [ ] Test both single song and album modes
+  - [ ] Test with empty queue (should show message)
+  - [ ] Test pause/resume functionality
+  - [ ] Test remove job from queue
+  - [ ] Test clear queue
+  - [ ] Test error recovery if Pro Tools not installed
 
-### Test Fixtures
-- [ ] Generate audio test files
-  ```bash
-  cd tests/fixtures
-  sox -n -r 44100 -b 16 44100_16bit.wav trim 0 5
-  sox -n -r 48000 -b 24 48000_24bit.wav trim 0 5
-  sox -n -r 96000 -b 24 96000_24bit.wav trim 0 5
-  ```
-
-### Main Entry Point
-- [ ] **main.py**: Application launcher
-  - Parse `--debug` flag for verbose logging/screenshots
-  - Check accessibility permissions on startup
-  - Show instructions if permissions missing
-  - Initialize QApplication
-  - Launch MainWindow
-  - Handle graceful shutdown
+- [ ] **Debug Mode Test**
+  - [ ] Run `python src/main.py --debug`
+  - [ ] Verify verbose logging to console and log file
+  - [ ] Check log file created: `protools_session_builder.log`
 
 ---
 
@@ -190,12 +169,173 @@
   - AppleScriptError
   - JobExecutionError
 
-### Phase 3: Test Suite
+### Phase 3: Core Layer Tests
 - [x] `test_audio_analyzer.py` (7 tests)
 - [x] `test_folder_scanner.py` (9 tests)
 - [x] `test_session_spec.py` (17 tests)
 - [x] `test_path_resolver.py` (11 tests)
-- [x] **40 passing tests**, 4 skipped (need fixtures)
+- [x] **44 core tests**, 4 skipped (need fixtures)
+
+### Phase 4: Queue Layer
+- [x] **Job Model** (`src/queue/job.py`)
+  - JobStatus enum (PENDING/RUNNING/COMPLETED/FAILED)
+  - Mutable runtime state wrapping immutable SessionSpec
+  - Properties: display_name, is_finished, duration
+  - Timestamps: queued_at, started_at, completed_at
+  - Unique job_id for tracking
+
+- [x] **QueueManager** (`src/queue/queue_manager.py`)
+  - Thread-safe FIFO queue using deque + Lock
+  - Add/remove/clear operations
+  - Current job tracking (separate from queue)
+  - Status management (complete_current, fail_current)
+  - Snapshot API (get_all_jobs)
+
+- [x] **JobExecutor** (`src/queue/job_executor.py`)
+  - ProToolsWorkflowProtocol for dependency injection
+  - 9-step workflow coordinator with progress callbacks
+  - Smart skipping (audio/MIDI/template only when present)
+  - Error handling and cleanup
+  - Progress tracking (5% → 100%)
+
+- [x] **QueueError Exception** (`src/core/exceptions.py`)
+
+### Phase 5: Queue Layer Tests
+- [x] `test_job.py` (14 tests)
+- [x] `test_queue_manager.py` (22 tests)
+- [x] `test_job_executor.py` (16 tests)
+- [x] `test_queue_integration.py` (8 tests)
+- [x] **60 queue tests**, all passing
+- [x] **100 total tests**, 4 skipped (need fixtures)
+
+### Phase 6: Pro Tools Layer ✓
+- [x] **AppSettings** (`src/protools/settings.py`) - 119 lines
+  - JSON persistence to `~/.protools_session_builder_settings.json`
+  - Configurable timing: dialog_wait_time (1.5s), import_completion_timeout (60s), window_appearance_timeout (10s)
+  - Retry configuration: applescript_retry_attempts (3), applescript_retry_delay (2s)
+  - Path configuration: root_output_dir, last_template_path
+  - Default testing directory: `{workspace}/testing/`
+  - Auto-save on property changes
+
+- [x] **AppleScript Templates** (`src/protools/scripts/`) - 7 templates, 308 lines total
+  - `launch_protools.applescript` (29 lines) - Activate app, poll for Dashboard
+  - `create_session.applescript` (43 lines) - Dashboard form with sample rate/bit depth
+  - `import_audio.applescript` (60 lines) - **Disable Apply SRC**, verify checkbox, poll for completion
+  - `import_midi.applescript` (42 lines) - Enable tempo/key import, poll for completion
+  - `import_template.applescript` (78 lines) - **Disable Apply SRC**, **dismiss Session Start Time warning**
+  - `save_session.applescript` (31 lines) - Save via Cmd+S, check for errors
+  - `close_session.applescript` (25 lines) - Close via Cmd+W, handle save dialogs
+
+- [x] **AppleScriptController** (`src/protools/applescript_controller.py`) - 147 lines
+  - Template loading from scripts/ directory with automatic path resolution
+  - Placeholder substitution: `{key}` → value, escapes double quotes
+  - Subprocess execution via osascript with stderr capture
+  - Error classification: retryable (timeout, UI not ready) vs non-retryable (template not found)
+  - Exponential backoff retry: 2s → 4s → 8s for retryable errors
+  - Clean error messages extracted from AppleScript stderr
+
+- [x] **UIScriptingUtils** (`src/protools/ui_scripting_utils.py`) - 189 lines
+  - `wait_for_window(window_name, timeout)` - Poll for window appearance (0.5s intervals)
+  - `wait_for_import_completion(timeout)` - Poll for import progress indicator disappearance
+  - `dismiss_warning(dialog_text)` - Find dialog by text, click OK/Yes button
+  - `verify_checkbox(window, checkbox_name, expected_value)` - Verify checkbox state
+  - `cleanup_on_error()` - Emergency cleanup: press Escape, close session, suppress errors
+  - `check_accessibility_permissions()` - Verify System Events can control Pro Tools
+  - `get_accessibility_instructions()` - User-friendly permission setup guide
+
+- [x] **ProToolsWorkflow** (`src/protools/workflow.py`) - 131 lines
+  - `launch()` - Launch Pro Tools, wait for Dashboard
+  - `create_session(name, sample_rate, bit_depth, output_dir)` - Create session
+  - `import_audio(files)` - Import audio with SRC disabled + verified
+  - `import_midi(files)` - Import MIDI with tempo/key enabled
+  - `import_template(template_path)` - Import template with SRC disabled + warning dismissed
+  - `save_session(session_file)` - Save and verify file exists
+  - `close_session()` - Close current session
+  - Implements ProToolsWorkflowProtocol for JobExecutor
+  - Integrates AppSettings for configurable timeouts
+
+- [x] **Integration Verification**
+  - All imports verified: `from src.protools import ProToolsWorkflow, AppSettings` ✓
+  - ProToolsWorkflow implements ProToolsWorkflowProtocol ✓
+  - Integration with JobExecutor confirmed ✓
+  - No circular dependencies ✓
+
+**Total Pro Tools Layer**: ~950 lines of production code (settings + scripts + controller + utils + workflow)
+
+### Phase 7: UI Layer ✓
+- [x] **MainWindow** (`src/ui/main_window.py`) - 476 lines
+  - Top section: Job creation form (artist, song, project, folders, settings)
+    - Artist/Song/Project name inputs with validation
+    - Album mode checkbox with dynamic project field enable/disable
+    - Source folder browser for audio/MIDI files
+    - Template file browser (optional .ptx selection)
+    - Output directory browser with settings persistence
+    - "Add to Queue" button with form validation
+  - Middle section: Queue table with controls
+    - 4-column table: Song Name, Artist, Status, Progress
+    - Start/Pause queue buttons with state management
+    - Remove selected job / Clear all jobs
+    - Row selection for job removal
+  - Bottom section: Progress and logs
+    - Current job label with job name
+    - Progress bar (0-100%)
+    - Status message label with error styling
+    - Real-time scrollable log output (auto-scroll to bottom)
+  - Settings integration: Load/save output directory on open/close
+  - Thread-safe UI updates via Qt Signals
+
+- [x] **QueueWorker** (`src/ui/queue_worker.py`) - 121 lines
+  - QThread subclass for background queue execution
+  - Integrates QueueManager + JobExecutor + ProToolsWorkflow
+  - Emits signals for all UI updates (job_started, job_progress, job_completed, job_failed, queue_finished, log_message)
+  - Progress callback integration with JobExecutor
+  - Exception handling: PTSessionBuilderError (user-friendly) vs unexpected errors
+  - Graceful stop mechanism (finish current job before pausing)
+  - Automatic queue completion when empty
+
+- [x] **AppController** (`src/ui/app_controller.py`) - 135 lines
+  - Coordinator between MainWindow, QueueManager, and QueueWorker
+  - Connects all UI signals to business logic
+  - Handles job lifecycle: add → start queue → execute → complete/fail
+  - Worker thread management: create, connect signals, start, cleanup
+  - Queue state enforcement: prevent clear/remove during execution
+  - UI state synchronization: update table after every state change
+  - Error propagation from worker to UI with logging
+
+- [x] **main.py** (`src/main.py`) - 149 lines
+  - Command-line argument parsing: `--debug` flag for verbose logging
+  - Logging setup: dual output (console + file), configurable log level
+  - Accessibility permissions check on startup with user-friendly instructions
+  - Permission dialog with retry logic
+  - QApplication initialization with app metadata
+  - MainWindow + AppController instantiation and wiring
+  - Welcome message with usage tips
+  - Settings auto-save on window close
+  - Graceful exit code handling
+
+- [x] **Test Fixtures** (`tests/fixtures/`)
+  - Generated 3 test audio files using sox:
+    - `44100_16bit.wav` (431KB, 5 seconds)
+    - `48000_24bit.wav` (703KB, 5 seconds)
+    - `96000_24bit.wav` (1.4MB, 5 seconds)
+  - Enables testing of sample rate detection and validation
+  - Used by skipped unit tests in core layer
+
+**Total UI Layer**: ~880 lines (MainWindow 476 + QueueWorker 121 + AppController 135 + main.py 149)
+
+### Phase 8: Bug Fixes - Queue Start Issue ✓
+- [x] **Issue Reported**: Queue start button does nothing - jobs stuck in pending status
+- [x] **Root Cause Analysis** (`src/ui/queue_worker.py`)
+  - Line 50: Called non-existent `get_current_job()` method → Should be `get_next()`
+  - Line 39: Created `JobExecutor` without progress callback
+  - Line 88: Tried to pass progress callback to `execute()` method → Should pass to constructor
+  - Lines 93, 100, 108: Called `complete_current_job()` and `fail_current_job()` → Should be `complete_current()` and `fail_current()`
+- [x] **Fixes Applied**:
+  - Changed `get_current_job()` to `get_next()` to properly dequeue jobs
+  - Removed instance variable `self.executor` from `__init__`
+  - Created `JobExecutor` per-job in `_execute_job()` with progress callback
+  - Fixed all QueueManager method calls to use correct names
+- [x] **Testing**: Ready for manual testing - queue should now execute jobs when Start Queue is clicked
 
 ---
 

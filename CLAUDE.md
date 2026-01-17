@@ -116,10 +116,10 @@ pytest -k "test_analyze"
 ### Running
 ```bash
 # Run application
-python src/main.py
+python3 src/main.py
 
 # Run with debug mode (verbose logging, screenshots)
-python src/main.py --debug
+python3 src/main.py --debug
 ```
 
 ## Testing Notes
