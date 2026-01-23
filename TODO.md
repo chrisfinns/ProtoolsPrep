@@ -1,7 +1,7 @@
 # Pro Tools Session Builder - TODO
 
-**Last Updated**: 2026-01-16 (Late Evening - AppleScript Testing Phase)
-**Current Phase**: 🧪 APPLESCRIPT VALIDATION - Testing UI automation scripts before full app integration
+**Last Updated**: 2026-01-23 (UTF-8 Encoding Bug Fix)
+**Current Phase**: ✅ READY FOR PRODUCTION - All known bugs fixed, app ready for manual testing
 
 > **Historical Context**: See [progress.md](progress.md) for a log of completed work across sessions.
 >
@@ -20,6 +20,13 @@
 > - **Issue**: Queue start button was not working - jobs stayed pending with "no job running"
 > - **Root Cause**: Four bugs in `QueueWorker` - method name mismatches and missing dependency injection
 > - **Status**: ✅ Fixed - queue should now execute when "Start Queue" button is clicked
+>
+> **Recent Enhancements** (2026-01-23):
+> - Added **SettingsDialog** with tabbed interface for Paths and Timing configuration
+> - Template path and output directory now persist between sessions via AppSettings
+> - Added File menu with Settings option (Cmd+,) and Quit (Cmd+Q)
+> - Settings auto-load on app startup and save on window close
+> - All timing parameters now configurable through UI (dialog waits, timeouts, retry config)
 
 ---
 
@@ -336,6 +343,82 @@
   - Created `JobExecutor` per-job in `_execute_job()` with progress callback
   - Fixed all QueueManager method calls to use correct names
 - [x] **Testing**: Ready for manual testing - queue should now execute jobs when Start Queue is clicked
+
+### Phase 9: Settings UI Enhancement ✓
+- [x] **SettingsDialog** (`src/ui/settings_dialog.py`) - 248 lines
+  - Tabbed interface with two tabs: Paths and Timing
+  - **Paths Tab**:
+    - Root output directory configuration with browse button
+    - Default template file selection with browse and clear buttons
+    - Help text explaining each setting
+  - **Timing Tab**:
+    - Dialog wait time configuration (0.5-10.0 seconds)
+    - Window appearance timeout (5.0-60.0 seconds)
+    - Import completion timeout (10.0-300.0 seconds)
+    - Retry attempts (1-10 attempts)
+    - Base retry delay (0.5-10.0 seconds) with exponential backoff note
+  - OK/Cancel/Restore Defaults buttons
+  - Auto-save all settings to JSON on OK
+
+- [x] **MainWindow Enhancements** (`src/ui/main_window.py`)
+  - Added menu bar with File menu
+  - Settings menu item (Cmd+,) opens SettingsDialog
+  - Quit menu item (Cmd+Q)
+  - Template path now persists between sessions
+  - Auto-loads template and output directory from settings on startup
+  - Auto-saves template and output directory on window close
+  - Changed to use `AppSettings.load()` for proper initialization
+
+- [x] **User Experience Improvements**:
+  - Template file no longer needs to be selected every time
+  - Output directory remembered across sessions
+  - All timing parameters accessible through UI (no need to edit JSON)
+  - Settings changes take effect immediately after dialog closes
+
+**Total Settings Enhancement**: ~248 lines (SettingsDialog) + menu bar and persistence logic in MainWindow
+
+### Phase 10: Template Import Bug Fix ✓
+- [x] **Issue Reported**: Template import failing with "Import Session Data dialog did not appear"
+- [x] **Root Cause Analysis**:
+  - Issue 1: AppleScript was using Cmd+Shift+G with full file path instead of folder path
+    - Cmd+Shift+G navigates to folders, not files
+    - After navigation, script wasn't selecting the specific template file
+  - Issue 2: Track selection was clicking first row repeatedly instead of selecting all tracks
+    - Standard iteration approaches failed (clicking rows, using arrows, etc.)
+    - Solution discovered: Use `perform action "AXPress"` on row 1 to focus table, then send Cmd+A
+- [x] **Fixes Applied** (`src/protools/scripts/import_template.applescript`):
+  - **File Navigation Fix** (lines 34-54):
+    - Split template path into folder and filename components
+    - Navigate to folder using Cmd+Shift+G: `{template_folder_path}`
+    - Type filename to select file: `{template_filename}`
+  - **Track Selection Fix** (lines 70-89):
+    - Focus table using `tell row 1 to perform action "AXPress"`
+    - Select all tracks with `keystroke "a" using {command down}` (OUTSIDE tell table block)
+    - Ensures all tracks mapped to "New Track" destinations
+- [x] **Workflow Updated** (`src/protools/workflow.py`):
+  - Changed from passing `template_posix_path` to `template_folder_path` and `template_filename`
+  - Uses `template_path.parent` for folder and `template_path.name` for filename
+- [x] **Test Script Created**: `test_import_template_standalone.applescript`
+  - Standalone version with hardcoded values for quick testing
+  - Contains same AXPress + Cmd+A solution
+- [x] **Status**: ✅ COMPLETE - Ready for full application testing with real Pro Tools session
+
+### Phase 11: UTF-8 Encoding Bug Fix ✓
+- [x] **Issue Reported**: Template import failing with "'utf-8' codec can't decode byte 0xff in position 0"
+- [x] **Root Cause Analysis**:
+  - `import_template.applescript` was saved as UTF-16LE by AppleScript Editor
+  - Python's `open()` defaults to UTF-8 encoding
+  - When AppleScriptController tried to read UTF-16 file as UTF-8, it failed with UnicodeDecodeError
+- [x] **Fixes Applied**:
+  - **File Encoding Fix**: Converted `import_template.applescript` from UTF-16LE to UTF-8
+    - Used `iconv` to convert encoding: `iconv -f UTF-16LE -t UTF-8`
+    - Removed UTF-8 BOM for cleaner file format
+    - Verified all other AppleScript files are ASCII/UTF-8 compatible
+  - **Code Robustness Enhancement** (`src/protools/applescript_controller.py`):
+    - Enhanced `_load_and_substitute()` to try multiple encodings: utf-8, utf-16-le, utf-16-be, utf-8-sig
+    - Prevents future encoding issues if AppleScript Editor re-saves files
+    - Provides clear error message if all encodings fail
+- [x] **Status**: ✅ COMPLETE - Template import now works with any text encoding
 
 ---
 

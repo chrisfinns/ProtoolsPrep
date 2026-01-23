@@ -83,8 +83,25 @@ class AppleScriptController:
         Returns:
             Script content with placeholders replaced
         """
-        with open(script_path, 'r') as f:
-            content = f.read()
+        # Try multiple encodings to handle different file formats
+        encodings = ['utf-8', 'utf-16-le', 'utf-16-be', 'utf-8-sig']
+        content = None
+        last_error = None
+
+        for encoding in encodings:
+            try:
+                with open(script_path, 'r', encoding=encoding) as f:
+                    content = f.read()
+                break
+            except UnicodeDecodeError as e:
+                last_error = e
+                continue
+
+        if content is None:
+            raise AppleScriptError(
+                f"Failed to read script {script_path.name} with any supported encoding. "
+                f"Last error: {last_error}"
+            )
 
         # Substitute all placeholders
         for key, value in placeholders.items():
