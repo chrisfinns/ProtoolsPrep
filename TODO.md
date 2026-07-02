@@ -1,7 +1,40 @@
 # Pro Tools Session Builder - TODO
 
-**Last Updated**: 2026-01-23 (UTF-8 Encoding Bug Fix)
-**Current Phase**: ✅ READY FOR PRODUCTION - All known bugs fixed, app ready for manual testing
+**Last Updated**: 2026-07-03 (PTSL prototype validated)
+**Current Phase**: 🔄 PIVOT TO PTSL - Official Pro Tools API validated end-to-end; AppleScript to be demoted to fallback
+
+---
+
+## 🚀 STRATEGIC PIVOT (2026-07-03): PTSL replaces most AppleScript
+
+Pro Tools 2024.3 ships PTSL (Pro Tools Scripting Library) v3, an official gRPC API.
+Validated live against this machine's Pro Tools via `py-ptsl==301.0.0` (see `prototypes/`):
+
+**Proven working end-to-end**:
+- ✅ Create session (name, path, 48kHz/24-bit WAV) → correct `.ptx` on disk at PathResolver's expected path
+- ✅ Import Session Data from `.ptx` template → **87 tracks imported** from Speed Mix Template
+  (replaces the entire import_template.applescript: no SRC checkbox, no AXPress row hack,
+  no Session Start Time warning — all request parameters)
+- ✅ Save, close, reopen session
+- ✅ Real error semantics (typed error codes instead of stderr parsing)
+
+**PTSL v3 quirks discovered (MUST handle in production)**:
+1. `import_data` REQUIRES explicit `timecode_mapping_start_time` (e.g. "00:00:00:00");
+   py-ptsl 301's empty-string default → PT_InvalidParameter (ErrType 126)
+2. Modal dialogs (Missing AAX Plugins, Save Changes) make ALL PTSL commands return
+   PT_NoOpenedSession (ErrType 106) even when a session is open. The Speed Mix Template
+   raises "Missing AAX Plugins" (Altiverb 7, C4, PuigTec EQP1A, S1 Imager) on EVERY
+   import/open on this machine → need a dialog supervisor (small AppleScript watchdog)
+3. Rapid back-to-back command cycles can wedge/crash PT 2024.3 → pace commands,
+   call `host_ready_check()` between operations, add settle delays after create/import
+4. py-ptsl 301 needs a protobuf-5 compat shim on Python 3.14 (json_format kwarg rename;
+   see prototypes/ptsl_probe.py)
+
+**Remaining AppleScript (PTSL v3 has no equivalent)**: MIDI import; dialog supervisor.
+**Next**: implement `PTSLWorkflow` behind ProToolsWorkflowProtocol (JobExecutor/UI unchanged).
+
+**📄 Full rebuild plan for developer handoff**: [docs/DEVELOPER_IMPROVEMENT_PLAN.md](docs/DEVELOPER_IMPROVEMENT_PLAN.md)
+(validated methods, PTSL v3 quirks, architecture, end-to-end pipeline, bug list, UI proposals, phased delivery)
 
 > **Historical Context**: See [progress.md](progress.md) for a log of completed work across sessions.
 >
