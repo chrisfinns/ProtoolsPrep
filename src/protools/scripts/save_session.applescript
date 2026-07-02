@@ -1,9 +1,7 @@
--- DEPRECATED: This script is no longer needed
--- The create_session.applescript now handles saving via the Save dialog
--- that appears after clicking Create. Keeping for reference only.
---
 -- Save current Pro Tools session
 -- Uses keyboard shortcut Cmd+S for reliability
+-- NOTE: The initial save happens during create_session via Dashboard Save dialog.
+-- This script ensures any changes from imports are persisted.
 
 tell application "System Events"
 	tell process "Pro Tools"

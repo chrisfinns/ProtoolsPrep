@@ -139,6 +139,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Pro Tools Session Builder")
     app.setOrganizationName("Pro Tools Prepper")
+    app.setApplicationDisplayName("Pro Tools Session Builder")
 
     # Check accessibility permissions
     if not check_permissions():

@@ -9,7 +9,8 @@ PySide6 desktop application with three main sections:
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import Qt, Signal, Slot, QUrl
+from PySide6.QtGui import QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
@@ -35,6 +36,7 @@ from src.core.path_resolver import PathResolver
 from src.core.session_spec import SessionSpec
 from src.protools.settings import AppSettings
 from src.queue.job import Job, JobStatus
+from src.ui.settings_dialog import SettingsDialog
 
 
 class MainWindow(QMainWindow):
@@ -49,7 +51,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.settings = AppSettings()
+        self.settings = AppSettings.load()
         self._init_ui()
         self._load_settings()
 
@@ -57,6 +59,9 @@ class MainWindow(QMainWindow):
         """Initialize the user interface."""
         self.setWindowTitle("Pro Tools Session Builder")
         self.setMinimumSize(900, 700)
+
+        # Create menu bar
+        self._create_menu_bar()
 
         # Central widget with vertical layout
         central_widget = QWidget()
@@ -72,6 +77,27 @@ class MainWindow(QMainWindow):
         layout.setStretch(0, 0)  # Fixed height for form
         layout.setStretch(1, 2)  # Queue table gets most space
         layout.setStretch(2, 1)  # Progress/logs get less space
+
+    def _create_menu_bar(self):
+        """Create application menu bar."""
+        menu_bar = self.menuBar()
+
+        # Use Qt's menu bar instead of native macOS menu bar
+        # This ensures the menu appears in the window on macOS
+        menu_bar.setNativeMenuBar(False)
+
+        # File menu
+        file_menu = menu_bar.addMenu("&File")
+
+        settings_action = file_menu.addAction("&Settings...")
+        settings_action.setShortcut("Cmd+,")
+        settings_action.triggered.connect(self._open_settings_dialog)
+
+        file_menu.addSeparator()
+
+        quit_action = file_menu.addAction("&Quit")
+        quit_action.setShortcut("Cmd+Q")
+        quit_action.triggered.connect(self.close)
 
     def _create_job_form_section(self) -> QGroupBox:
         """Create the top section: job creation form."""
@@ -102,7 +128,10 @@ class MainWindow(QMainWindow):
         # Source folder selector
         source_layout = QHBoxLayout()
         self.source_folder_input = QLineEdit()
-        self.source_folder_input.setPlaceholderText("Select folder containing audio/MIDI files")
+        self.source_folder_input.setPlaceholderText("Drag folder here or browse...")
+        self.source_folder_input.setAcceptDrops(True)
+        self.source_folder_input.dragEnterEvent = self._drag_enter_event
+        self.source_folder_input.dropEvent = self._drop_event
         source_browse_btn = QPushButton("Browse...")
         source_browse_btn.clicked.connect(self._browse_source_folder)
         source_layout.addWidget(self.source_folder_input)
@@ -427,6 +456,37 @@ class MainWindow(QMainWindow):
         self.pause_queue_btn.setEnabled(is_running)
         self.add_to_queue_btn.setEnabled(not is_running)
 
+    # Drag and drop event handlers
+
+    def _drag_enter_event(self, event: QDragEnterEvent):
+        """Accept drag events if they contain file URLs."""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def _drop_event(self, event: QDropEvent):
+        """Handle dropped folders and extract the path."""
+        urls = event.mimeData().urls()
+        if urls:
+            # Get the first URL (file path)
+            file_path = urls[0].toLocalFile()
+
+            # Check if it's a directory
+            path = Path(file_path)
+            if path.is_dir():
+                self.source_folder_input.setText(str(path))
+                self._log_message(f"Source folder set via drag-and-drop: {path}")
+                event.acceptProposedAction()
+            else:
+                # If user dropped a file, use its parent directory
+                parent_dir = path.parent
+                self.source_folder_input.setText(str(parent_dir))
+                self._log_message(f"Using parent directory of dropped file: {parent_dir}")
+                event.acceptProposedAction()
+        else:
+            event.ignore()
+
     # Private helper methods
 
     def _clear_form(self):
@@ -464,11 +524,32 @@ class MainWindow(QMainWindow):
         if self.settings.root_output_dir:
             self.output_dir_input.setText(str(self.settings.root_output_dir))
 
+        # Set template path from settings
+        if self.settings.last_template_path:
+            self.template_file_input.setText(str(self.settings.last_template_path))
+
+    @Slot()
+    def _open_settings_dialog(self):
+        """Open the settings dialog."""
+        dialog = SettingsDialog(self.settings, self)
+        if dialog.exec():
+            # Settings were saved, reload them into main window
+            self._load_settings()
+            self._log_message("Settings updated and saved")
+
     def closeEvent(self, event):
         """Handle window close event."""
         # Save current output directory to settings
         output_dir = self.output_dir_input.text().strip()
         if output_dir and Path(output_dir).is_dir():
-            self.settings.root_output_dir = Path(output_dir)
+            self.settings.set_root_output_dir(Path(output_dir))
+
+        # Save current template path to settings
+        template_path = self.template_file_input.text().strip()
+        if template_path and Path(template_path).is_file():
+            self.settings.set_last_template_path(Path(template_path))
+        elif not template_path:
+            # Clear template if field is empty
+            self.settings.set_last_template_path(None)
 
         event.accept()

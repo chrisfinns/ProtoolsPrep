@@ -59,27 +59,40 @@ class ProToolsWorkflow:
     ) -> None:
         """Create new Pro Tools session from Dashboard.
 
-        Note: Session is initially created in Pro Tools' default location.
-        Use save_session() afterward to save it to the desired output_dir.
+        Pro Tools creates a folder named after the session and places the .ptx file
+        inside it. The save_path should point to the PARENT directory where Pro Tools
+        will create this folder.
 
         Args:
             name: Session name
             sample_rate: Sample rate in Hz (e.g., 44100, 48000)
             bit_depth: Bit depth (e.g., 16, 24)
-            output_dir: Directory where session should be saved (used for validation only)
+            output_dir: Directory where session folder will be created
 
         Raises:
             AppleScriptError: If session creation fails
         """
-        # Ensure output directory exists
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # Ensure parent directory exists (Pro Tools will create the session folder)
+        parent_dir = output_dir.parent
+        parent_dir.mkdir(parents=True, exist_ok=True)
+
+        # Convert sample rate from Hz to Pro Tools format (e.g., 48000 -> "48 kHz")
+        # Pro Tools shows "48 kHz", "44.1 kHz", "96 kHz" (no trailing .0)
+        sample_rate_khz_value = sample_rate / 1000
+        if sample_rate_khz_value == int(sample_rate_khz_value):
+            # No decimal needed (48000 -> "48 kHz", 96000 -> "96 kHz")
+            sample_rate_khz = f"{int(sample_rate_khz_value)} kHz"
+        else:
+            # Keep decimal (44100 -> "44.1 kHz", 88200 -> "88.2 kHz")
+            sample_rate_khz = f"{sample_rate_khz_value:.1f} kHz"
 
         self.controller.execute(
             "create_session",
             placeholders={
                 "session_name": name,
-                "sample_rate": str(sample_rate),
+                "sample_rate": sample_rate_khz,
                 "bit_depth": str(bit_depth),
+                "save_path": str(parent_dir),
                 "window_timeout": str(int(self.settings.window_appearance_timeout))
             }
         )
@@ -157,32 +170,31 @@ class ProToolsWorkflow:
         self.controller.execute(
             "import_template",
             placeholders={
-                "template_posix_path": str(template_path),
+                "template_folder_path": str(template_path.parent),
+                "template_filename": template_path.name,
                 "dialog_wait": str(self.settings.dialog_wait_time),
                 "import_timeout": str(int(self.settings.import_completion_timeout))
             }
         )
 
     def save_session(self, session_file: Path) -> None:
-        """Save current Pro Tools session to specific location.
+        """Save current Pro Tools session.
+
+        Note: The session is already saved when created via the Dashboard.
+        This method performs a simple save (Cmd+S) to ensure any changes
+        from imports are persisted.
 
         Args:
-            session_file: Path where session should be saved
+            session_file: Path where session should be saved (used for verification only)
 
         Raises:
             AppleScriptError: If save operation fails
         """
-        # Use Save As to save to specific location
-        self.controller.execute(
-            "save_session_as",
-            placeholders={
-                "save_path": str(session_file.parent),
-                "session_name": session_file.stem,
-                "dialog_wait": str(self.settings.dialog_wait_time)
-            }
-        )
+        # Session was already saved during create_session via Dashboard Save dialog.
+        # Just do a simple save (Cmd+S) to persist any changes from imports.
+        self.controller.execute("save_session")
 
-        # Verify session file was created
+        # Verify session file exists
         # Pro Tools creates the .ptx file, but we need to wait a moment
         import time
         time.sleep(1)

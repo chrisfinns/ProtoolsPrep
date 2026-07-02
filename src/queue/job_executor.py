@@ -166,13 +166,19 @@ class JobExecutor:
             raise ValidationError(f"Template file not found: {job.spec.template_path}")
 
     def _step_create_dir(self, job: Job) -> None:
-        """Step 2: Create output directory (10%)."""
-        self._update_progress(job, self.STEP_PROGRESS["create_dir"], "Creating output directory")
+        """Step 2: Create parent directory (10%).
+
+        Pro Tools automatically creates the session folder when saving,
+        so we only need to ensure the parent directory exists.
+        """
+        self._update_progress(job, self.STEP_PROGRESS["create_dir"], "Creating parent directory")
 
         try:
-            job.spec.output_dir.mkdir(parents=True, exist_ok=True)
+            # Only create parent directory - Pro Tools creates the session folder
+            parent_dir = job.spec.output_dir.parent
+            parent_dir.mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            raise JobExecutionError(f"Failed to create output directory: {e}") from e
+            raise JobExecutionError(f"Failed to create parent directory: {e}") from e
 
     def _step_launch(self, job: Job) -> None:
         """Step 3: Launch Pro Tools (20%)."""
