@@ -12,7 +12,10 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from src.protools.ui_scripting_utils import UIScriptingUtils
+from src.protools.accessibility import (
+    check_accessibility_permissions,
+    get_accessibility_instructions,
+)
 from src.ui import AppController, MainWindow
 
 
@@ -48,11 +51,11 @@ def check_permissions() -> bool:
     logger = logging.getLogger(__name__)
 
     try:
-        has_permissions = UIScriptingUtils.check_accessibility_permissions()
+        has_permissions = check_accessibility_permissions()
 
         if not has_permissions:
             logger.warning("Accessibility permissions not granted")
-            instructions = UIScriptingUtils.get_accessibility_instructions()
+            instructions = get_accessibility_instructions()
 
             # Show instructions dialog
             msg = QMessageBox()
@@ -72,7 +75,7 @@ def check_permissions() -> bool:
                 return False
 
             # User clicked OK - recheck permissions
-            has_permissions = UIScriptingUtils.check_accessibility_permissions()
+            has_permissions = check_accessibility_permissions()
 
             if not has_permissions:
                 logger.warning("Permissions still not granted")

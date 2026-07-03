@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QSpinBox,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -116,76 +115,70 @@ class SettingsDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
-        # Dialog Timing
-        dialog_group = QGroupBox("Dialog Timing")
-        dialog_layout = QFormLayout()
+        # PTSL Timing (primary automation path)
+        ptsl_group = QGroupBox("Pro Tools Scripting (PTSL)")
+        ptsl_layout = QFormLayout()
 
-        dialog_help = QLabel("Adjust these if Pro Tools UI interactions are unreliable")
-        dialog_help.setStyleSheet("color: gray; font-size: 10pt;")
-        dialog_layout.addRow("", dialog_help)
+        ptsl_help = QLabel(
+            "Pacing for the official Pro Tools API. Increase settle time if "
+            "Pro Tools becomes unresponsive during batches."
+        )
+        ptsl_help.setStyleSheet("color: gray; font-size: 10pt;")
+        ptsl_help.setWordWrap(True)
+        ptsl_layout.addRow("", ptsl_help)
+
+        self.ptsl_settle_input = QDoubleSpinBox()
+        self.ptsl_settle_input.setRange(1.0, 60.0)
+        self.ptsl_settle_input.setSingleStep(1.0)
+        self.ptsl_settle_input.setSuffix(" seconds")
+        self.ptsl_settle_input.setDecimals(1)
+        ptsl_layout.addRow("Settle Time After Operations:", self.ptsl_settle_input)
+
+        self.ptsl_connect_timeout_input = QDoubleSpinBox()
+        self.ptsl_connect_timeout_input.setRange(30.0, 600.0)
+        self.ptsl_connect_timeout_input.setSingleStep(30.0)
+        self.ptsl_connect_timeout_input.setSuffix(" seconds")
+        self.ptsl_connect_timeout_input.setDecimals(1)
+        ptsl_layout.addRow("Launch/Connect Timeout:", self.ptsl_connect_timeout_input)
+
+        self.save_poll_timeout_input = QDoubleSpinBox()
+        self.save_poll_timeout_input.setRange(5.0, 300.0)
+        self.save_poll_timeout_input.setSingleStep(5.0)
+        self.save_poll_timeout_input.setSuffix(" seconds")
+        self.save_poll_timeout_input.setDecimals(1)
+        ptsl_layout.addRow("Save Verification Timeout:", self.save_poll_timeout_input)
+
+        ptsl_group.setLayout(ptsl_layout)
+        layout.addWidget(ptsl_group)
+
+        # AppleScript Timing (surviving scripts: MIDI import, dialog supervisor)
+        applescript_group = QGroupBox("AppleScript (MIDI Import / Dialogs)")
+        applescript_layout = QFormLayout()
+
+        applescript_help = QLabel(
+            "Used only by the remaining UI-scripting steps: MIDI import and "
+            "dialog dismissal."
+        )
+        applescript_help.setStyleSheet("color: gray; font-size: 10pt;")
+        applescript_help.setWordWrap(True)
+        applescript_layout.addRow("", applescript_help)
 
         self.dialog_wait_input = QDoubleSpinBox()
         self.dialog_wait_input.setRange(0.5, 10.0)
         self.dialog_wait_input.setSingleStep(0.5)
         self.dialog_wait_input.setSuffix(" seconds")
         self.dialog_wait_input.setDecimals(1)
-        dialog_layout.addRow("Dialog Wait Time:", self.dialog_wait_input)
+        applescript_layout.addRow("Dialog Wait Time:", self.dialog_wait_input)
 
-        self.window_timeout_input = QDoubleSpinBox()
-        self.window_timeout_input.setRange(5.0, 60.0)
-        self.window_timeout_input.setSingleStep(5.0)
-        self.window_timeout_input.setSuffix(" seconds")
-        self.window_timeout_input.setDecimals(1)
-        dialog_layout.addRow("Window Appearance Timeout:", self.window_timeout_input)
+        self.midi_import_timeout_input = QDoubleSpinBox()
+        self.midi_import_timeout_input.setRange(10.0, 300.0)
+        self.midi_import_timeout_input.setSingleStep(10.0)
+        self.midi_import_timeout_input.setSuffix(" seconds")
+        self.midi_import_timeout_input.setDecimals(1)
+        applescript_layout.addRow("MIDI Import Timeout:", self.midi_import_timeout_input)
 
-        dialog_group.setLayout(dialog_layout)
-        layout.addWidget(dialog_group)
-
-        # Import Timing
-        import_group = QGroupBox("Import Timing")
-        import_layout = QFormLayout()
-
-        import_help = QLabel("Maximum time to wait for audio/MIDI/template imports to complete")
-        import_help.setStyleSheet("color: gray; font-size: 10pt;")
-        import_layout.addRow("", import_help)
-
-        self.import_timeout_input = QDoubleSpinBox()
-        self.import_timeout_input.setRange(10.0, 300.0)
-        self.import_timeout_input.setSingleStep(10.0)
-        self.import_timeout_input.setSuffix(" seconds")
-        self.import_timeout_input.setDecimals(1)
-        import_layout.addRow("Import Completion Timeout:", self.import_timeout_input)
-
-        import_group.setLayout(import_layout)
-        layout.addWidget(import_group)
-
-        # Retry Configuration
-        retry_group = QGroupBox("Retry Configuration")
-        retry_layout = QFormLayout()
-
-        retry_help = QLabel("AppleScript retry behavior for transient failures")
-        retry_help.setStyleSheet("color: gray; font-size: 10pt;")
-        retry_layout.addRow("", retry_help)
-
-        self.retry_attempts_input = QSpinBox()
-        self.retry_attempts_input.setRange(1, 10)
-        self.retry_attempts_input.setSingleStep(1)
-        self.retry_attempts_input.setSuffix(" attempts")
-        retry_layout.addRow("Retry Attempts:", self.retry_attempts_input)
-
-        self.retry_delay_input = QDoubleSpinBox()
-        self.retry_delay_input.setRange(0.5, 10.0)
-        self.retry_delay_input.setSingleStep(0.5)
-        self.retry_delay_input.setSuffix(" seconds")
-        self.retry_delay_input.setDecimals(1)
-        retry_layout.addRow("Base Retry Delay:", self.retry_delay_input)
-
-        retry_note = QLabel("Uses exponential backoff: 2s → 4s → 8s")
-        retry_note.setStyleSheet("color: gray; font-size: 10pt; font-style: italic;")
-        retry_layout.addRow("", retry_note)
-
-        retry_group.setLayout(retry_layout)
-        layout.addWidget(retry_group)
+        applescript_group.setLayout(applescript_layout)
+        layout.addWidget(applescript_group)
 
         layout.addStretch()
         return widget
@@ -230,11 +223,11 @@ class SettingsDialog(QDialog):
             self.settings.set_last_template_path(None)
 
         # Save timing settings
+        self.settings.ptsl_settle_time = self.ptsl_settle_input.value()
+        self.settings.ptsl_connect_timeout = self.ptsl_connect_timeout_input.value()
+        self.settings.save_poll_timeout = self.save_poll_timeout_input.value()
         self.settings.dialog_wait_time = self.dialog_wait_input.value()
-        self.settings.window_appearance_timeout = self.window_timeout_input.value()
-        self.settings.import_completion_timeout = self.import_timeout_input.value()
-        self.settings.applescript_retry_attempts = self.retry_attempts_input.value()
-        self.settings.applescript_retry_delay = self.retry_delay_input.value()
+        self.settings.midi_import_timeout = self.midi_import_timeout_input.value()
 
         # Persist to disk
         self.settings.save()
@@ -250,11 +243,11 @@ class SettingsDialog(QDialog):
         # Load defaults into UI
         self.output_dir_input.setText(defaults.root_output_dir or "")
         self.template_file_input.clear()
+        self.ptsl_settle_input.setValue(defaults.ptsl_settle_time)
+        self.ptsl_connect_timeout_input.setValue(defaults.ptsl_connect_timeout)
+        self.save_poll_timeout_input.setValue(defaults.save_poll_timeout)
         self.dialog_wait_input.setValue(defaults.dialog_wait_time)
-        self.window_timeout_input.setValue(defaults.window_appearance_timeout)
-        self.import_timeout_input.setValue(defaults.import_completion_timeout)
-        self.retry_attempts_input.setValue(defaults.applescript_retry_attempts)
-        self.retry_delay_input.setValue(defaults.applescript_retry_delay)
+        self.midi_import_timeout_input.setValue(defaults.midi_import_timeout)
 
     def _load_settings(self):
         """Load current settings into UI."""
@@ -266,8 +259,8 @@ class SettingsDialog(QDialog):
             self.template_file_input.setText(self.settings.last_template_path)
 
         # Load timing settings
+        self.ptsl_settle_input.setValue(self.settings.ptsl_settle_time)
+        self.ptsl_connect_timeout_input.setValue(self.settings.ptsl_connect_timeout)
+        self.save_poll_timeout_input.setValue(self.settings.save_poll_timeout)
         self.dialog_wait_input.setValue(self.settings.dialog_wait_time)
-        self.window_timeout_input.setValue(self.settings.window_appearance_timeout)
-        self.import_timeout_input.setValue(self.settings.import_completion_timeout)
-        self.retry_attempts_input.setValue(self.settings.applescript_retry_attempts)
-        self.retry_delay_input.setValue(self.settings.applescript_retry_delay)
+        self.midi_import_timeout_input.setValue(self.settings.midi_import_timeout)

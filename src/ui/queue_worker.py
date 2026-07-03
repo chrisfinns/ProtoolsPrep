@@ -11,7 +11,7 @@ from PySide6.QtCore import QThread, Signal
 
 from src.core.exceptions import PTSessionBuilderError
 from src.protools.settings import AppSettings
-from src.protools.workflow import ProToolsWorkflow
+from src.protools.ptsl_workflow import PTSLWorkflow
 from src.queue.job import Job
 from src.queue.job_executor import JobExecutor
 from src.queue.queue_manager import QueueManager
@@ -37,7 +37,7 @@ class QueueWorker(QThread):
         super().__init__()
         self.queue_manager = queue_manager
         self.settings = AppSettings.load()
-        self.workflow = ProToolsWorkflow(self.settings)
+        self.workflow = PTSLWorkflow(self.settings)
         self._should_stop = False
 
     def run(self):

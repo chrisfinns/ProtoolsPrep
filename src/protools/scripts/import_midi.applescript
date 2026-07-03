@@ -1,16 +1,21 @@
--- Import MIDI files with tempo and key signature import enabled
+-- Import MIDI files with tempo and key signature import enabled.
+-- One of two surviving AppleScripts (PTSL v3 has no MIDI import command).
+--
 -- Placeholders: {midi_folder_path}, {dialog_wait}, {import_timeout}
--- NOTE: MIDI Import Options window detected via static text, not window name
+-- Returns: "midi-import:ok:with-options" or "midi-import:ok:no-options"
+-- Errors (non-zero exit) on any unmet precondition - no blind keystrokes.
 
 tell application "System Events"
+	if not (exists process "Pro Tools") then
+		error "Pro Tools is not running"
+	end if
+
 	tell process "Pro Tools"
-		-- Ensure Pro Tools stays in focus
 		set frontmost to true
 
 		------------------------------------------------------------
-		-- Ensure menu bar is accessible
+		-- Preconditions: menu bar reachable, a session window open
 		------------------------------------------------------------
-		log "Checking Pro Tools menu bar accessibility..."
 		set menuReady to false
 		repeat 10 times
 			if exists menu bar 1 then
@@ -19,57 +24,77 @@ tell application "System Events"
 			end if
 			delay 0.5
 		end repeat
-
 		if not menuReady then
 			error "Pro Tools menu bar not accessible"
 		end if
 
+		if not (exists menu item "Import" of menu "File" of menu bar 1) then
+			error "File > Import menu not available (no session open?)"
+		end if
+
 		------------------------------------------------------------
-		-- File -> Import -> MIDI
+		-- File -> Import -> MIDI...
 		------------------------------------------------------------
-		log "Opening File -> Import -> MIDI..."
 		click menu item "MIDI..." of menu "Import" of menu item "Import" of menu "File" of menu bar 1
 
 		------------------------------------------------------------
-		-- Wait for Open dialog
+		-- Wait for the Open dialog (poll, not a single fixed delay)
 		------------------------------------------------------------
-		delay {dialog_wait}
-
-		if not (exists window 1) then
-			error "Open dialog did not appear"
+		set dialogReady to false
+		set waited to 0
+		repeat
+			delay 0.5
+			set waited to waited + 0.5
+			if exists window 1 then
+				set dialogReady to true
+				exit repeat
+			end if
+			if waited is greater than or equal to {dialog_wait} + 5 then exit repeat
+		end repeat
+		if not dialogReady then
+			error "MIDI Open dialog did not appear"
 		end if
 
 		tell window 1
 			--------------------------------------------------------
-			-- Navigate to MIDI folder
+			-- Navigate to the MIDI folder via Go To Folder sheet.
+			-- Only press Return once the sheet is confirmed present,
+			-- so the keystroke cannot land somewhere unexpected.
 			--------------------------------------------------------
-			log "Navigating to MIDI folder..."
 			keystroke "g" using {command down, shift down}
-			delay 0.5
+
+			set sheetReady to false
+			repeat 10 times
+				delay 0.3
+				if exists sheet 1 then
+					set sheetReady to true
+					exit repeat
+				end if
+			end repeat
+			if not sheetReady then
+				error "Go To Folder sheet did not appear in Open dialog"
+			end if
+
 			keystroke "{midi_folder_path}"
 			delay 0.3
-			keystroke return
+			keystroke return -- confirms the Go To Folder sheet (verified present)
 			delay 1
 
 			--------------------------------------------------------
-			-- Select all MIDI files
+			-- Select all MIDI files and open
 			--------------------------------------------------------
-			log "Selecting all files..."
 			keystroke "a" using command down
 			delay 0.3
 
-			--------------------------------------------------------
-			-- Confirm import
-			--------------------------------------------------------
-			log "Clicking Open..."
+			if not (exists button "Open") then
+				error "Open button not found in file dialog"
+			end if
 			click button "Open"
 		end tell
 
 		------------------------------------------------------------
-		-- Wait for MIDI Import Options (if it appears)
-		-- IMPORTANT: detected via static text, not window name
+		-- MIDI Import Options may or may not appear
 		------------------------------------------------------------
-		log "Waiting for MIDI Import Options (if required)..."
 		set elapsed to 0
 		set optionsHandled to false
 
@@ -77,69 +102,64 @@ tell application "System Events"
 			delay 0.5
 			set elapsed to elapsed + 0.5
 
-			if exists (static text "MIDI Import Options" of window 1) then
-				log "MIDI Import Options detected"
-
-				set optionsWindow to window "MIDI Import Options"
-
-				tell optionsWindow
-					------------------------------------------------
-					-- Import Tempo
-					------------------------------------------------
+			if exists window "MIDI Import Options" then
+				tell window "MIDI Import Options"
 					if exists checkbox "Import Tempo" then
 						if enabled of checkbox "Import Tempo" then
 							set value of checkbox "Import Tempo" to 1
-							log "Enabled Import Tempo"
-						else
-							log "Import Tempo checkbox is disabled"
 						end if
-					else
-						log "No Import Tempo checkbox found"
 					end if
-
-					------------------------------------------------
-					-- Import Key Signature
-					------------------------------------------------
 					if exists checkbox "Import Key Signature" then
 						if enabled of checkbox "Import Key Signature" then
 							set value of checkbox "Import Key Signature" to 1
-							log "Enabled Import Key Signature"
-						else
-							log "Import Key Signature checkbox is disabled"
 						end if
-					else
-						log "No Import Key Signature checkbox found"
 					end if
-
-					------------------------------------------------
-					-- Accept options
-					------------------------------------------------
+					if not (exists button "OK") then
+						error "MIDI Import Options has no OK button"
+					end if
 					click button "OK"
 				end tell
-
 				set optionsHandled to true
 				exit repeat
 			end if
 
-			-- If no options window appears quickly, import completed silently
-			if elapsed >= {import_timeout} then
+			-- Fallback: options window detected via static text (window
+			-- name is unreliable on some Pro Tools builds)
+			if exists window 1 then
+				if exists (static text "MIDI Import Options" of window 1) then
+					tell window 1
+						if exists checkbox "Import Tempo" then
+							if enabled of checkbox "Import Tempo" then
+								set value of checkbox "Import Tempo" to 1
+							end if
+						end if
+						if exists checkbox "Import Key Signature" then
+							if enabled of checkbox "Import Key Signature" then
+								set value of checkbox "Import Key Signature" to 1
+							end if
+						end if
+						if not (exists button "OK") then
+							error "MIDI Import Options has no OK button"
+						end if
+						click button "OK"
+					end tell
+					set optionsHandled to true
+					exit repeat
+				end if
+			end if
+
+			-- No options window within the timeout: import completed silently
+			if elapsed is greater than or equal to {import_timeout} then
 				exit repeat
 			end if
 		end repeat
 
-		if optionsHandled then
-			log "MIDI import completed with options dialog"
-		else
-			log "MIDI import completed without options dialog"
-		end if
-
-		------------------------------------------------------------
-		-- Final safety delay
-		------------------------------------------------------------
 		delay 0.5
-
-		log "MIDI import completed successfully"
 	end tell
 end tell
 
-return "MIDI import completed successfully"
+if optionsHandled then
+	return "midi-import:ok:with-options"
+else
+	return "midi-import:ok:no-options"
+end if
