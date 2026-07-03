@@ -77,7 +77,7 @@ class SettingsDialog(QDialog):
         output_row.addWidget(output_browse_btn)
 
         output_help = QLabel("All sessions will be created under this directory")
-        output_help.setStyleSheet("color: gray; font-size: 10pt;")
+        output_help.setProperty("hint", True)
 
         output_layout.addRow("Root Directory:", output_row)
         output_layout.addRow("", output_help)
@@ -100,7 +100,7 @@ class SettingsDialog(QDialog):
         template_row.addWidget(template_clear_btn)
 
         template_help = QLabel("This template will be automatically loaded when creating new sessions")
-        template_help.setStyleSheet("color: gray; font-size: 10pt;")
+        template_help.setProperty("hint", True)
 
         template_layout.addRow("Template File:", template_row)
         template_layout.addRow("", template_help)
@@ -123,7 +123,7 @@ class SettingsDialog(QDialog):
             "Pacing for the official Pro Tools API. Increase settle time if "
             "Pro Tools becomes unresponsive during batches."
         )
-        ptsl_help.setStyleSheet("color: gray; font-size: 10pt;")
+        ptsl_help.setProperty("hint", True)
         ptsl_help.setWordWrap(True)
         ptsl_layout.addRow("", ptsl_help)
 
@@ -159,7 +159,7 @@ class SettingsDialog(QDialog):
             "iLok/PACE activation windows can't be dismissed automatically - "
             "jobs wait this long for you to click Quit on them."
         )
-        user_dialog_note.setStyleSheet("color: gray; font-size: 10pt; font-style: italic;")
+        user_dialog_note.setProperty("hint", True)
         user_dialog_note.setWordWrap(True)
         ptsl_layout.addRow("", user_dialog_note)
 
@@ -174,7 +174,7 @@ class SettingsDialog(QDialog):
             "Used only by the remaining UI-scripting steps: MIDI import and "
             "dialog dismissal."
         )
-        applescript_help.setStyleSheet("color: gray; font-size: 10pt;")
+        applescript_help.setProperty("hint", True)
         applescript_help.setWordWrap(True)
         applescript_layout.addRow("", applescript_help)
 

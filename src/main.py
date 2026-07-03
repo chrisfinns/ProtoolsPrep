@@ -144,6 +144,10 @@ def main():
     app.setOrganizationName("Pro Tools Prepper")
     app.setApplicationDisplayName("Pro Tools Session Builder")
 
+    # Apply the dark studio theme (Fusion + QSS + palette)
+    from src.ui.theme import apply_theme
+    apply_theme(app)
+
     # Check accessibility permissions
     if not check_permissions():
         logger.error("Accessibility permissions not granted - exiting")

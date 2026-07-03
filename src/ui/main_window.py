@@ -6,11 +6,12 @@ PySide6 desktop application with three main sections:
 3. Bottom: Progress bar and real-time log output
 """
 
+import subprocess
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, Signal, Slot, QUrl
-from PySide6.QtGui import QDragEnterEvent, QDropEvent
+from PySide6.QtCore import Qt, Signal, Slot, QEvent, QUrl
+from PySide6.QtGui import QColor, QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
@@ -23,6 +24,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QProgressBar,
     QPushButton,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -36,7 +38,16 @@ from src.core.path_resolver import PathResolver
 from src.core.session_spec import SessionSpec
 from src.protools.settings import AppSettings
 from src.queue.job import Job, JobStatus
+from src.ui import theme
 from src.ui.settings_dialog import SettingsDialog
+
+# Human-readable status labels (status is conveyed by text AND color)
+STATUS_LABELS = {
+    JobStatus.PENDING: "Pending",
+    JobStatus.RUNNING: "● Running",
+    JobStatus.COMPLETED: "✓ Completed",
+    JobStatus.FAILED: "✕ Failed",
+}
 
 
 class MainWindow(QMainWindow):
@@ -59,6 +70,7 @@ class MainWindow(QMainWindow):
         """Initialize the user interface."""
         self.setWindowTitle("Pro Tools Session Builder")
         self.setMinimumSize(900, 700)
+        self.resize(980, 880)
 
         # Create menu bar
         self._create_menu_bar()
@@ -67,24 +79,24 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
 
-        # Add three main sections
+        # Form on top; queue and progress/log share a draggable splitter
         layout.addWidget(self._create_job_form_section())
-        layout.addWidget(self._create_queue_section())
-        layout.addWidget(self._create_progress_section())
 
-        # Set stretch factors (form: 0, queue: 2, progress: 1)
-        layout.setStretch(0, 0)  # Fixed height for form
-        layout.setStretch(1, 2)  # Queue table gets most space
-        layout.setStretch(2, 1)  # Progress/logs get less space
+        splitter = QSplitter(Qt.Vertical)
+        splitter.setChildrenCollapsible(False)
+        splitter.addWidget(self._create_queue_section())
+        splitter.addWidget(self._create_progress_section())
+        splitter.setStretchFactor(0, 2)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([420, 210])  # queue gets the room by default
+        layout.addWidget(splitter, stretch=1)
 
     def _create_menu_bar(self):
-        """Create application menu bar."""
+        """Create application menu bar (native macOS menu bar)."""
         menu_bar = self.menuBar()
-
-        # Use Qt's menu bar instead of native macOS menu bar
-        # This ensures the menu appears in the window on macOS
-        menu_bar.setNativeMenuBar(False)
 
         # File menu
         file_menu = menu_bar.addMenu("&File")
@@ -103,6 +115,8 @@ class MainWindow(QMainWindow):
         """Create the top section: job creation form."""
         group = QGroupBox("New Session")
         form_layout = QFormLayout()
+        form_layout.setVerticalSpacing(8)
+        form_layout.setHorizontalSpacing(10)
 
         # Artist name
         self.artist_input = QLineEdit()
@@ -161,12 +175,10 @@ class MainWindow(QMainWindow):
         output_layout.addWidget(output_browse_btn)
         form_layout.addRow("Output Directory:", output_layout)
 
-        # Add to queue button
+        # Add to queue button (primary action - styled by theme)
         self.add_to_queue_btn = QPushButton("Add to Queue")
+        self.add_to_queue_btn.setProperty("primary", True)
         self.add_to_queue_btn.clicked.connect(self._on_add_to_queue)
-        self.add_to_queue_btn.setStyleSheet(
-            "QPushButton { background-color: #4CAF50; color: white; padding: 8px; font-weight: bold; }"
-        )
         form_layout.addRow("", self.add_to_queue_btn)
 
         group.setLayout(form_layout)
@@ -181,6 +193,7 @@ class MainWindow(QMainWindow):
         # Queue control buttons
         button_layout = QHBoxLayout()
         self.start_queue_btn = QPushButton("Start Queue")
+        self.start_queue_btn.setProperty("primary", True)
         self.start_queue_btn.clicked.connect(self.start_queue_requested.emit)
         self.pause_queue_btn = QPushButton("Pause Queue")
         self.pause_queue_btn.clicked.connect(self.pause_queue_requested.emit)
@@ -205,18 +218,38 @@ class MainWindow(QMainWindow):
         self.queue_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.queue_table.setSelectionMode(QTableWidget.SingleSelection)
         self.queue_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.queue_table.setAlternatingRowColors(True)
+        self.queue_table.setShowGrid(False)
+        self.queue_table.verticalHeader().setVisible(False)
+        self.queue_table.cellDoubleClicked.connect(self._on_job_double_clicked)
 
         # Configure column widths
         header = self.queue_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Stretch)  # Song
         header.setSectionResizeMode(1, QHeaderView.Stretch)  # Artist
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Status
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Progress
+        header.setSectionResizeMode(3, QHeaderView.Fixed)  # Progress
+        header.resizeSection(3, 140)
+
+        # Empty-state hint, shown until the first job is queued
+        self.queue_empty_label = QLabel(
+            "No sessions queued\nFill in the form above and click “Add to Queue”",
+            self.queue_table.viewport(),
+        )
+        self.queue_empty_label.setAlignment(Qt.AlignCenter)
+        self.queue_empty_label.setProperty("hint", True)
+        self.queue_table.viewport().installEventFilter(self)
 
         layout.addWidget(self.queue_table)
 
         group.setLayout(layout)
         return group
+
+    def eventFilter(self, obj, event):
+        """Keep the queue empty-state hint centered over the table."""
+        if obj is self.queue_table.viewport() and event.type() == QEvent.Resize:
+            self.queue_empty_label.setGeometry(self.queue_table.viewport().rect())
+        return super().eventFilter(obj, event)
 
     def _create_progress_section(self) -> QGroupBox:
         """Create the bottom section: progress bar and logs."""
@@ -239,13 +272,14 @@ class MainWindow(QMainWindow):
         self.status_label = QLabel("Ready")
         layout.addWidget(self.status_label)
 
-        # Log output
-        log_label = QLabel("Log Output:")
+        # Log output (height managed by the splitter)
+        log_label = QLabel("Log Output")
+        log_label.setProperty("hint", True)
         layout.addWidget(log_label)
 
         self.log_output = QTextEdit()
+        self.log_output.setObjectName("logOutput")
         self.log_output.setReadOnly(True)
-        self.log_output.setMaximumHeight(150)
         layout.addWidget(self.log_output)
 
         group.setLayout(layout)
@@ -410,28 +444,87 @@ class MainWindow(QMainWindow):
     @Slot(list)
     def update_queue_table(self, jobs: list[Job]):
         """Update the queue table with current jobs."""
+        # Preserve the selected job across the refresh
+        selected_job_id = None
+        selected_rows = self.queue_table.selectionModel().selectedRows()
+        if selected_rows:
+            item = self.queue_table.item(selected_rows[0].row(), 0)
+            if item:
+                selected_job_id = item.data(Qt.UserRole)
+
         self.queue_table.setRowCount(len(jobs))
+        self.queue_empty_label.setVisible(len(jobs) == 0)
 
         for row, job in enumerate(jobs):
-            # Song name (store job_id in UserRole)
+            status_color = QColor(theme.STATUS_COLORS[job.status.value])
+            # Failed rows explain themselves on hover
+            tooltip = job.error_message if job.status == JobStatus.FAILED else ""
+            # Completed rows can be revealed in Finder
+            if job.status == JobStatus.COMPLETED:
+                tooltip = "Double-click to reveal the session in Finder"
+
+            # Song name (store job_id and session file in item data)
             song_item = QTableWidgetItem(job.spec.song_name)
             song_item.setData(Qt.UserRole, job.job_id)
+            song_item.setData(Qt.UserRole + 1, str(job.spec.session_file))
+            song_item.setData(Qt.UserRole + 2, job.status.value)
             self.queue_table.setItem(row, 0, song_item)
 
             # Artist
             artist_item = QTableWidgetItem(job.spec.artist)
             self.queue_table.setItem(row, 1, artist_item)
 
-            # Status
-            status_item = QTableWidgetItem(job.status.value)
+            # Status: label + semantic color (text carries the state too)
+            status_item = QTableWidgetItem(STATUS_LABELS[job.status])
             status_item.setTextAlignment(Qt.AlignCenter)
+            status_item.setForeground(status_color)
             self.queue_table.setItem(row, 2, status_item)
 
-            # Progress
-            progress_text = f"{job.progress}%" if job.progress > 0 else "-"
-            progress_item = QTableWidgetItem(progress_text)
-            progress_item.setTextAlignment(Qt.AlignCenter)
-            self.queue_table.setItem(row, 3, progress_item)
+            # Progress: a real progress bar for running jobs, quiet text otherwise
+            if job.status == JobStatus.RUNNING:
+                bar = QProgressBar()
+                bar.setRange(0, 100)
+                bar.setValue(job.progress)
+                bar.setFormat(f"{job.progress}%")
+                cell = QWidget()
+                cell_layout = QHBoxLayout(cell)
+                cell_layout.setContentsMargins(8, 2, 8, 2)
+                cell_layout.addWidget(bar)
+                self.queue_table.setCellWidget(row, 3, cell)
+                self.queue_table.setItem(row, 3, QTableWidgetItem(""))
+            else:
+                self.queue_table.removeCellWidget(row, 3)
+                progress_text = "100%" if job.status == JobStatus.COMPLETED else (
+                    f"{job.progress}%" if job.progress > 0 else "–"
+                )
+                progress_item = QTableWidgetItem(progress_text)
+                progress_item.setTextAlignment(Qt.AlignCenter)
+                progress_item.setForeground(QColor(theme.MUTED))
+                self.queue_table.setItem(row, 3, progress_item)
+
+            # Row tooltip
+            for col in range(4):
+                cell_item = self.queue_table.item(row, col)
+                if cell_item:
+                    cell_item.setToolTip(tooltip)
+
+            # Restore selection
+            if job.job_id == selected_job_id:
+                self.queue_table.selectRow(row)
+
+    @Slot(int, int)
+    def _on_job_double_clicked(self, row: int, column: int):
+        """Reveal a completed job's session in Finder."""
+        item = self.queue_table.item(row, 0)
+        if not item:
+            return
+        if item.data(Qt.UserRole + 2) != JobStatus.COMPLETED.value:
+            return
+        session_file = Path(item.data(Qt.UserRole + 1))
+        if session_file.exists():
+            subprocess.run(["open", "-R", str(session_file)])
+        else:
+            self._log_message(f"Session file not found: {session_file}")
 
     @Slot(str, int)
     def update_job_progress(self, job_name: str, progress: int):
@@ -510,7 +603,7 @@ class MainWindow(QMainWindow):
     def _show_error(self, message: str):
         """Show error in status label and log."""
         self.status_label.setText(f"Error: {message}")
-        self.status_label.setStyleSheet("color: red; font-weight: bold;")
+        self.status_label.setStyleSheet(f"color: {theme.STATUS_FAILED}; font-weight: bold;")
         self._log_message(f"ERROR: {message}")
 
     def _log_message(self, message: str):
