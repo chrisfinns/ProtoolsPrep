@@ -36,7 +36,7 @@ class QueueWorker(QThread):
     def __init__(self, queue_manager: QueueManager):
         super().__init__()
         self.queue_manager = queue_manager
-        self.settings = AppSettings()
+        self.settings = AppSettings.load()
         self.workflow = ProToolsWorkflow(self.settings)
         self._should_stop = False
 

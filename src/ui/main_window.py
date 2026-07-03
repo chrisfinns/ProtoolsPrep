@@ -443,6 +443,8 @@ class MainWindow(QMainWindow):
     def update_status(self, message: str):
         """Update status label."""
         self.status_label.setText(message)
+        # Reset any error styling applied by _show_error
+        self.status_label.setStyleSheet("")
 
     @Slot(str)
     def log_message(self, message: str):
