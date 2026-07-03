@@ -148,6 +148,21 @@ class SettingsDialog(QDialog):
         self.save_poll_timeout_input.setDecimals(1)
         ptsl_layout.addRow("Save Verification Timeout:", self.save_poll_timeout_input)
 
+        self.user_dialog_timeout_input = QDoubleSpinBox()
+        self.user_dialog_timeout_input.setRange(60.0, 3600.0)
+        self.user_dialog_timeout_input.setSingleStep(60.0)
+        self.user_dialog_timeout_input.setSuffix(" seconds")
+        self.user_dialog_timeout_input.setDecimals(0)
+        ptsl_layout.addRow("Wait for Manual Dialog Dismissal:", self.user_dialog_timeout_input)
+
+        user_dialog_note = QLabel(
+            "iLok/PACE activation windows can't be dismissed automatically - "
+            "jobs wait this long for you to click Quit on them."
+        )
+        user_dialog_note.setStyleSheet("color: gray; font-size: 10pt; font-style: italic;")
+        user_dialog_note.setWordWrap(True)
+        ptsl_layout.addRow("", user_dialog_note)
+
         ptsl_group.setLayout(ptsl_layout)
         layout.addWidget(ptsl_group)
 
@@ -226,6 +241,7 @@ class SettingsDialog(QDialog):
         self.settings.ptsl_settle_time = self.ptsl_settle_input.value()
         self.settings.ptsl_connect_timeout = self.ptsl_connect_timeout_input.value()
         self.settings.save_poll_timeout = self.save_poll_timeout_input.value()
+        self.settings.user_dialog_timeout = self.user_dialog_timeout_input.value()
         self.settings.dialog_wait_time = self.dialog_wait_input.value()
         self.settings.midi_import_timeout = self.midi_import_timeout_input.value()
 
@@ -246,6 +262,7 @@ class SettingsDialog(QDialog):
         self.ptsl_settle_input.setValue(defaults.ptsl_settle_time)
         self.ptsl_connect_timeout_input.setValue(defaults.ptsl_connect_timeout)
         self.save_poll_timeout_input.setValue(defaults.save_poll_timeout)
+        self.user_dialog_timeout_input.setValue(defaults.user_dialog_timeout)
         self.dialog_wait_input.setValue(defaults.dialog_wait_time)
         self.midi_import_timeout_input.setValue(defaults.midi_import_timeout)
 
@@ -262,5 +279,6 @@ class SettingsDialog(QDialog):
         self.ptsl_settle_input.setValue(self.settings.ptsl_settle_time)
         self.ptsl_connect_timeout_input.setValue(self.settings.ptsl_connect_timeout)
         self.save_poll_timeout_input.setValue(self.settings.save_poll_timeout)
+        self.user_dialog_timeout_input.setValue(self.settings.user_dialog_timeout)
         self.dialog_wait_input.setValue(self.settings.dialog_wait_time)
         self.midi_import_timeout_input.setValue(self.settings.midi_import_timeout)

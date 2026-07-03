@@ -119,15 +119,11 @@ class PTSLWorkflow:
                 builder.bit_depth(bit_depth)
                 builder.create()
 
-        try:
-            _create()
-        except SessionBlockedError:
-            # 106: modal dialog or genuinely no session. Sweep, then check
-            # whether the create actually went through before re-issuing
-            # (commands issued during a modal can queue and run afterwards).
-            self.supervisor.sweep()
-            if not self._session_open_with_name(name):
-                _create()
+        self._run_blocked_tolerant(
+            _create,
+            verified_done=lambda: self._session_open_with_name(name),
+            step_name=f"Session creation ({name})",
+        )
 
         self.client.settle()
 
@@ -239,14 +235,15 @@ class PTSLWorkflow:
                 imp._timecode_mapping_start_time = "00:00:00:00"
                 imp.import_data()
 
-        try:
-            _import()
-        except SessionBlockedError:
-            # Modal (typically Missing AAX Plugins) or a real problem. Sweep,
-            # then only re-import if the import demonstrably didn't happen.
-            self.supervisor.sweep()
-            if self._query_track_count() == 0:
-                _import()
+        # Template plugins trigger dialogs during import: "Missing AAX
+        # Plugins" (auto-dismissed) and PACE/iLok activation windows, which
+        # are invisible to automation and must be Quit by hand. The helper
+        # waits for the user, verifying track count before any re-issue.
+        self._run_blocked_tolerant(
+            _import,
+            verified_done=lambda: self._query_track_count() > 0,
+            step_name=f"Template import ({template_path.name})",
+        )
 
         # Missing AAX Plugins fires after every import of a template whose
         # plugins aren't installed - the normal path on this machine.
@@ -254,7 +251,10 @@ class PTSLWorkflow:
         self.client.settle()
 
         # Postcondition the old system never had: tracks actually arrived.
-        track_count = self._query_track_count()
+        # Must be blocked-aware: PACE/iLok activation windows keep every
+        # query returning 106 until the user Quits them, and a blocked
+        # query must NOT be read as "zero tracks".
+        track_count = self._wait_for_track_count()
         if track_count == 0:
             raise PTSLError(
                 f"Template import verification failed: no tracks in session "
@@ -325,6 +325,53 @@ class PTSLWorkflow:
         self.client.settle()
 
     # ------------------------------------------------------------------
+    # Blocked-operation handling
+    # ------------------------------------------------------------------
+
+    def _run_blocked_tolerant(self, operation, verified_done, step_name: str) -> None:
+        """Run a PTSL operation, tolerating 106s caused by dialogs.
+
+        Handles three live-observed causes of SessionBlockedError:
+        - whitelisted dialogs (Missing AAX Plugins...): swept automatically
+        - transient "session state is already changing": resolved by waiting
+        - PACE/iLok activation windows: INVISIBLE to accessibility (DRM) -
+          nothing can dismiss them but the user. We log clear instructions
+          and wait up to settings.user_dialog_timeout.
+
+        verified_done() is checked before every re-issue: commands rejected
+        during a modal can queue and execute after dismissal, so blind
+        re-runs would double-execute.
+        """
+        deadline = time.monotonic() + self.settings.user_dialog_timeout
+        delay = 2.0
+        warned = False
+        while True:
+            try:
+                operation()
+                return
+            except SessionBlockedError as e:
+                self.supervisor.sweep()
+                if verified_done():
+                    logger.info("%s: verified complete after being blocked", step_name)
+                    return
+                if time.monotonic() >= deadline:
+                    raise PTSLError(
+                        f"{step_name} stayed blocked for "
+                        f"{self.settings.user_dialog_timeout:.0f}s: {e}"
+                    ) from e
+                if not warned:
+                    logger.warning(
+                        "%s is blocked by Pro Tools (%s). If an iLok/PACE "
+                        "'Activation is required' window is showing, press "
+                        "Quit on each one - the job resumes automatically "
+                        "(waiting up to %.0fs).",
+                        step_name, e, self.settings.user_dialog_timeout,
+                    )
+                    warned = True
+                time.sleep(delay)
+                delay = min(delay * 2, 10.0)
+
+    # ------------------------------------------------------------------
     # State queries (used by state-aware retry)
     # ------------------------------------------------------------------
 
@@ -340,9 +387,43 @@ class PTSLWorkflow:
         return self._query_session_name() == name
 
     def _query_track_count(self) -> int:
-        """Track count of the open session, or 0 if none/blocked."""
+        """Track count of the open session, or 0 if none/blocked.
+
+        Only for pre-re-issue state checks, where "blocked" and "nothing
+        imported" both mean "do not skip the operation". For verification
+        use _wait_for_track_count, which waits out blockage instead.
+        """
         try:
             with self.client.translate_errors():
                 return len(self.client.engine().track_list())
         except SessionBlockedError:
             return 0
+
+    def _wait_for_track_count(self) -> int:
+        """Track count once Pro Tools answers definitively.
+
+        While a PACE/iLok activation window is up every query returns 106;
+        wait for the user to dismiss them (up to user_dialog_timeout) and
+        only trust an actual track_list response.
+        """
+        deadline = time.monotonic() + self.settings.user_dialog_timeout
+        warned = False
+        while True:
+            try:
+                with self.client.translate_errors():
+                    return len(self.client.engine().track_list())
+            except SessionBlockedError as e:
+                self.supervisor.sweep()
+                if time.monotonic() >= deadline:
+                    raise PTSLError(
+                        f"Could not verify track count - Pro Tools stayed "
+                        f"blocked for {self.settings.user_dialog_timeout:.0f}s: {e}"
+                    ) from e
+                if not warned:
+                    logger.warning(
+                        "Track verification blocked (%s). If iLok/PACE "
+                        "'Activation is required' windows are showing, press "
+                        "Quit on each - verification resumes automatically.", e,
+                    )
+                    warned = True
+                time.sleep(3.0)

@@ -11,6 +11,10 @@
 --     worth keeping; "Don't Save" would discard imported data.
 --   * Modal dialogs make ALL PTSL commands return PT_NoOpenedSession (106),
 --     so Python calls this on every 106 and after import/close.
+--   * PACE/iLok "Activation is required" dialogs are INVISIBLE to the
+--     accessibility tree (DRM) and may poison AX queries entirely
+--     (-10000 errors, reported as "ax-error:"). They cannot be dismissed
+--     here - the workflow waits for the user to press Quit manually.
 
 on collectText(w)
 	tell application "System Events"
@@ -32,6 +36,18 @@ on collectText(w)
 end collectText
 
 on run
+	try
+		return my supervise()
+	on error errMsg
+		-- PACE/iLok DRM dialogs poison accessibility queries of the whole
+		-- process (observed: AppleEvent handler failed, -10000). Report as
+		-- a distinct state instead of crashing - Python treats it as
+		-- "cannot inspect right now".
+		return "ax-error:" & errMsg
+	end try
+end run
+
+on supervise()
 	tell application "System Events"
 		if not (exists process "Pro Tools") then return "none"
 		tell process "Pro Tools"
@@ -95,4 +111,4 @@ on run
 			return "none"
 		end tell
 	end tell
-end run
+end supervise

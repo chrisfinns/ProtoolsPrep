@@ -44,6 +44,15 @@ class DialogSupervisor:
             return label
         if result.startswith("unknown:"):
             raise DialogBlockedError(result[len("unknown:"):])
+        if result.startswith("ax-error:"):
+            # PACE/iLok DRM dialogs poison accessibility queries (-10000).
+            # We cannot inspect - and definitely cannot dismiss - so treat as
+            # "nothing we can do" and let the workflow's patient wait handle it.
+            logger.warning(
+                "Dialog supervisor could not inspect Pro Tools windows "
+                "(likely a PACE/iLok dialog): %s", result[len("ax-error:"):],
+            )
+            return ""
 
         raise AppleScriptError(f"Dialog supervisor returned unparseable result: {result!r}")
 

@@ -157,9 +157,12 @@ class PTSLClient:
             yield
         except CommandError as e:
             if e.error_type == PT_NO_OPENED_SESSION:
+                # Observed details: "Unable to complete..." (idle, no session),
+                # "Session state is already changing" (transient - PT busy
+                # starting up or mid-transition; retry after a wait).
                 raise SessionBlockedError(
-                    "PTSL reports no open session - either no session is open "
-                    "or a modal dialog is blocking Pro Tools"
+                    "PTSL reports no open session - no session is open, a modal "
+                    f"dialog is blocking, or Pro Tools is mid-transition: {e.message}"
                 ) from e
             if e.error_type == PT_INVALID_PARAMETER:
                 raise PTSLParameterError(f"PTSL rejected a parameter: {e.message}") from e

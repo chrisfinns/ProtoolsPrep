@@ -71,6 +71,8 @@ FolderScanner → AudioAnalyzer → SessionSpec → Job → JobExecutor
 2. **Modal dialogs poison every PTSL response**: while ANY modal is up, all commands return `PT_NoOpenedSession` (106) even with a session open. 106 means "no session OR modal blocking" — always run the dialog supervisor before concluding. "Missing AAX Plugins" fires on **every** template import on this machine (normal path).
 3. **Rapid command cycling can wedge/crash Pro Tools 2024.3**: `ensure_ready()` before operations, `settle()` (configurable, default 8 s) after create/import/open. Keep the queue serial.
 4. **py-ptsl 301 + protobuf 5**: needs the `ptsl_compat` shim on Python ≥3.13. When Pro Tools is upgraded, bump py-ptsl in lockstep (401=2024.6, 500=2024.10, 60x=2025.6+) and drop the shim when possible.
+5. **PACE/iLok "Activation is required" dialogs are INVISIBLE to accessibility** (DRM): System Events reports 0 windows while they're on screen, and querying the process can fail outright (-10000, reported by the supervisor as `ax-error:`). They appear once per unlicensed iLok plugin when the user's iLok isn't plugged in — at Pro Tools startup and during template import. **They cannot be automated.** The workflow waits up to `user_dialog_timeout` (default 600 s) with a logged instruction while the user presses Quit on each, then resumes. A blocked query must never be read as "no session"/"zero tracks" — use the patient variants (`_run_blocked_tolerant`, `_wait_for_track_count`).
+6. **106 detail messages observed live**: "Unable to complete the command..." (idle/no session or dialog up) and "Session state is already changing" (transient — Pro Tools mid-startup or mid-transition; wait and retry).
 
 ## Error Handling
 

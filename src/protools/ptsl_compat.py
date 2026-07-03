@@ -12,7 +12,13 @@ Remove this shim when py-ptsl is bumped past 301 (Pro Tools upgrade):
 401 = 2024.6, 500 = 2024.10, 60x = 2025.6+.
 """
 
+import os
+
 from google.protobuf import json_format as _jf
+
+# Quiet grpc's fork-handler info spam: running osascript subprocesses (the
+# dialog supervisor) while a channel is open floods stderr otherwise.
+os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
 
 _installed = False
 

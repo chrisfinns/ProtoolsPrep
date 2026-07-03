@@ -21,6 +21,9 @@ class AppSettings:
             launching Pro Tools; cold starts are slow (default: 240.0)
         save_poll_timeout: Max seconds to poll for the .ptx on disk after
             save (default: 30.0)
+        user_dialog_timeout: Max seconds to wait for the USER to manually
+            dismiss dialogs automation cannot touch - PACE/iLok activation
+            windows are invisible to accessibility (default: 600.0)
 
     AppleScript Configuration (two surviving scripts: MIDI import, dialog supervisor):
         dialog_wait_time: Seconds to wait after opening dialogs (default: 2.0)
@@ -40,6 +43,7 @@ class AppSettings:
     ptsl_settle_time: float = 8.0
     ptsl_connect_timeout: float = 240.0
     save_poll_timeout: float = 30.0
+    user_dialog_timeout: float = 600.0
 
     # AppleScript configuration (surviving scripts only)
     dialog_wait_time: float = 2.0

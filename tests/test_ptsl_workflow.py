@@ -10,7 +10,7 @@ Covers the behaviors that matter most (docs/DEVELOPER_IMPROVEMENT_PLAN.md):
 import contextlib
 import threading
 from pathlib import Path
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -169,6 +169,37 @@ class TestImportTemplate:
         workflow.import_template(template)
 
         assert imp.import_data.call_count == 1  # NOT re-issued
+
+    def test_verification_waits_out_pace_blockage(
+        self, workflow, engine, settings, tmp_path
+    ):
+        # Live-observed: PACE/iLok activation windows keep track_list
+        # returning 106 until the user presses Quit. A blocked query must
+        # be waited out, never read as "zero tracks".
+        template = tmp_path / "Template.ptx"
+        template.touch()
+        engine.import_data.return_value = MagicMock()
+        engine.track_list.side_effect = [
+            SessionBlockedError("PACE dialog up"),
+            SessionBlockedError("PACE dialog up"),
+            [MagicMock()] * 87,  # user pressed Quit; real answer arrives
+        ]
+
+        with patch("src.protools.ptsl_workflow.time.sleep"):
+            workflow.import_template(template)  # must not raise
+
+    def test_verification_blocked_past_timeout_raises(
+        self, workflow, engine, settings, tmp_path
+    ):
+        settings.user_dialog_timeout = 0.1
+        template = tmp_path / "Template.ptx"
+        template.touch()
+        engine.import_data.return_value = MagicMock()
+        engine.track_list.side_effect = SessionBlockedError("forever blocked")
+
+        with patch("src.protools.ptsl_workflow.time.sleep"):
+            with pytest.raises(PTSLError, match="stayed blocked"):
+                workflow.import_template(template)
 
 
 class TestImportAudio:

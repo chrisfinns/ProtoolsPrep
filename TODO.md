@@ -32,25 +32,33 @@ The automation layer was rebuilt on **PTSL** (official Pro Tools gRPC API) per
 
 ---
 
-## 🎯 Next Up — Live validation with real Pro Tools (manual)
+## ✅ Live validation results (2026-07-03, Pro Tools 2024.3)
 
-Run these in order, with Pro Tools 2024.3 open and idle:
+1. [x] **Connection probe** — PTSL v3, all workflow commands available
+2. [x] **⚠️ import_audio spike** — **VALIDATED**: files copied into Audio Files
+       (not linked) + new tracks created. Step 5 is PTSL, no fallback needed.
+3. [x] **Template import E2E via production PTSLWorkflow** — 87 tracks imported
+       from Speed Mix Template, saved, .ptx verified on disk, closed.
+       **Major discovery**: PACE/iLok "Activation is required" dialogs (one per
+       unlicensed plugin when the iLok isn't plugged in) are INVISIBLE to
+       accessibility (DRM) — they cannot be auto-dismissed. The workflow now
+       waits up to `user_dialog_timeout` (600 s) with logged instructions while
+       the user presses Quit on each, then resumes and verifies. Also fixed:
+       supervisor no longer crashes on PACE-poisoned AX queries (-10000 →
+       "ax-error:"), and blocked track queries are never read as "zero tracks".
+4. [x] Transient 106 "Session state is already changing" right after Pro Tools
+       startup — handled with patient state-checked retry.
 
-1. [ ] **Connection probe** (read-only, safe any time)
-       `venv/bin/python prototypes/ptsl_probe.py`
-2. [ ] **⚠️ import_audio spike** — the ONE PTSL v3 command never live-tested.
-       `venv/bin/python prototypes/ptsl_audio_import_spike.py`
-       PASS = files copied into Audio Files + new tracks created.
-       FAIL = revive an AppleScript audio-import fallback (old script is in git
-       history: `git show 0244397^:src/protools/scripts/import_audio.applescript`)
-3. [ ] **Dialog supervisor dry run** — import the Speed Mix Template (raises
-       "Missing AAX Plugins" on this machine every time) and confirm the
-       supervisor dismisses it and the job continues
-4. [ ] **One real job end-to-end from the UI** — audio + template into `testing/`
-5. [ ] **Restart recovery** — quit Pro Tools mid-idle, verify next job relaunches
+## 🎯 Next Up — remaining live tests (manual)
+
+1. [ ] **One real job end-to-end from the app UI** — audio + template into `testing/`
+       (best with iLok plugged in, or expect to Quit activation windows once)
+2. [ ] **Restart recovery** — quit Pro Tools mid-idle, verify next job relaunches
        and reconnects
-6. [ ] **MIDI import** — job with .mid files; verify hardened script + tempo/key options
-7. [ ] **Multi-job soak** — 3+ jobs, mixed sample rates, with/without template/MIDI
+3. [ ] **MIDI import** — job with .mid files; verify hardened script + tempo/key options
+4. [ ] **Multi-job soak** — 3+ jobs, mixed sample rates, with/without template/MIDI
+5. [ ] Tip for batches without the iLok: consider iLok Cloud sessions for the
+       licensed plugins, so activation windows never appear
 
 ## 🎨 Later — UI modernization (plan §9, independent pass)
 
