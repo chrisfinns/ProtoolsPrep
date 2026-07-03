@@ -18,9 +18,13 @@ This ensures continuity across sessions and prevents lost context.
 
 ## Project Overview
 
-Pro Tools Session Builder - A macOS desktop application (Python 3.11+ with PySide6) that batch-processes song folders, analyzes audio specs using sox/soxi, and automates Pro Tools session creation via AppleScript UI scripting.
+Pro Tools Session Builder - A macOS desktop application (Python 3.11+ with PySide6) that batch-processes song folders, analyzes audio specs using sox/soxi, and automates Pro Tools session creation via **PTSL** (Pro Tools Scripting Library, Avid's official gRPC API — v3 in Pro Tools 2024.3).
 
-**Critical Design Constraint**: All Pro Tools automation uses AppleScript + System Events (no Pro Tools SDK). This is intentionally brittle - reliability comes from configurable timing, polling over fixed delays, and retry logic.
+**Automation strategy**: PTSL is the primary path (typed commands, typed errors, no UI races). Exactly **two** guarded AppleScripts survive because PTSL v3 has no equivalent:
+1. `import_midi.applescript` — MIDI import
+2. `dialog_supervisor.applescript` — whitelist-only dismissal of modal dialogs
+
+The full rationale, validated behaviors, and quirk list live in `docs/DEVELOPER_IMPROVEMENT_PLAN.md`.
 
 ## Architecture
 
@@ -28,9 +32,12 @@ Pro Tools Session Builder - A macOS desktop application (Python 3.11+ with PySid
 ```
 FolderScanner → AudioAnalyzer → SessionSpec → Job → JobExecutor
                                                         ↓
-                                                  ProToolsWorkflow
+                                          ProToolsWorkflowProtocol
                                                         ↓
-                                                  AppleScript
+                                                  PTSLWorkflow
+                                            ↓ (gRPC :31416)   ↓ (fallbacks)
+                                             py-ptsl      AppleScriptRunner
+                                                          (MIDI import, dialog supervisor)
 ```
 
 ### Layer Responsibilities
@@ -43,53 +50,54 @@ FolderScanner → AudioAnalyzer → SessionSpec → Job → JobExecutor
 
 **Queue Layer** (`src/queue/`)
 - `QueueManager`: Orchestrates serial job execution (Pro Tools can only be automated one session at a time)
-- `JobExecutor`: Coordinates 9-step workflow with progress callbacks (5% validate → 30% create → 50% audio → 70% MIDI → 85% template → 100%)
+- `JobExecutor`: Coordinates 9-step workflow with progress callbacks; depends only on `ProToolsWorkflowProtocol`
 - Jobs are **never** executed in parallel - queue is strictly serial
 
 **Pro Tools Layer** (`src/protools/`)
-- `AppleScriptController`: Template substitution + osascript execution with stderr parsing and exponential backoff retry
-- `ProToolsWorkflow`: High-level operations (launch, create, import, save) - each method encapsulates a multi-step AppleScript sequence
-- `UIScriptingUtils`: Reliability helpers - polling for windows, detecting import completion, dismissing warnings
+- `ptsl_compat`: protobuf-5 shim for py-ptsl 301 — **must be imported before `ptsl`** (all modules here do)
+- `PTSLClient` (`ptsl_client.py`): engine lifecycle — lazy connect/reconnect (survives Pro Tools restarts), `ensure_ready()` (host_ready_check + backoff), `settle()` pacing, typed error translation
+- `PTSLWorkflow` (`ptsl_workflow.py`): implements the protocol — launch, create, import audio/template (PTSL), import MIDI (AppleScript fallback), save (polls for .ptx), close
+- `DialogSupervisor` (`dialog_supervisor.py` + script): dismisses only whitelisted dialogs, returns structured results, raises `DialogBlockedError` on anything unknown
+- `AppleScriptRunner` (`applescript_runner.py`): minimal osascript runner — escaped substitution, per-call derived timeouts, **no automatic retry**
+- `accessibility.py`: permission check for the two surviving scripts
 
 **UI Layer** (`src/ui/`)
 - PySide6 with Qt Signals for thread-safe updates from background queue execution
 - MainWindow layout: Top (job form) → Middle (queue table) → Bottom (progress/logs)
 
-## Critical AppleScript Requirements
+## Critical PTSL v3 Quirks (discovered in live testing — MUST handle)
 
-### MUST Disable "Apply SRC" (Sample Rate Conversion)
-**Why**: Pro Tools' SRC corrupts audio quality. Since we pre-validate sample rates match, SRC must be disabled.
+1. **`import_data` requires an explicit timecode start**: py-ptsl 301's empty-string default is rejected with `PT_InvalidParameter` (126). Set `imp._timecode_mapping_start_time = "00:00:00:00"` directly — do NOT use `map_start_timecode()`, which silently switches the mapping option away from MaintainAbsoluteTimeCodeValues.
+2. **Modal dialogs poison every PTSL response**: while ANY modal is up, all commands return `PT_NoOpenedSession` (106) even with a session open. 106 means "no session OR modal blocking" — always run the dialog supervisor before concluding. "Missing AAX Plugins" fires on **every** template import on this machine (normal path).
+3. **Rapid command cycling can wedge/crash Pro Tools 2024.3**: `ensure_ready()` before operations, `settle()` (configurable, default 8 s) after create/import/open. Keep the queue serial.
+4. **py-ptsl 301 + protobuf 5**: needs the `ptsl_compat` shim on Python ≥3.13. When Pro Tools is upgraded, bump py-ptsl in lockstep (401=2024.6, 500=2024.10, 60x=2025.6+) and drop the shim when possible.
 
-**Where**:
-1. `import_audio.applescript` - Audio import dialog
-2. `import_template.applescript` - Session Data import dialog
+## Error Handling
 
-**Pattern**:
-```applescript
-set value of checkbox "Apply SRC" to 0
--- VERIFY it worked
-set srcValue to value of checkbox "Apply SRC"
-if srcValue is not 0 then
-    error "Failed to disable Apply SRC"
-end if
+### Exception Hierarchy
+```
+PTSessionBuilderError (base)
+├── AudioAnalysisError
+│   └── SampleRateMismatchError   # Different sample rates in folder
+├── ValidationError                # Invalid session spec
+├── AppleScriptError               # Surviving scripts failed
+├── PTSLError                      # PTSL operation failed
+│   ├── ProToolsNotRunningError    # endpoint unreachable/crashed
+│   ├── SessionBlockedError        # 106: no session OR modal dialog up
+│   ├── PTSLParameterError         # 126: bad request field (non-retryable)
+│   └── DialogBlockedError         # unknown dialog blocking (not whitelisted)
+├── JobExecutionError              # Workflow step failed
+└── QueueError
 ```
 
-### MUST Dismiss "Session Start Time" Warning
-When importing templates with different start times, Pro Tools shows a warning dialog. This MUST be dismissed automatically or workflow hangs.
-
-Location: `import_template.applescript` after selecting template file.
-
-### MUST Wait for Import Completion
-Never proceed until imports finish. Poll for progress indicators to disappear, don't use fixed delays.
+### Retry Policy (state-aware — never blind)
+On `SessionBlockedError` (106): run dialog supervisor sweep → verify actual state (session open? tracks imported?) → only re-issue if the operation demonstrably didn't happen. Commands issued during a modal can queue and execute after dismissal, so blind re-runs cause double execution. The old "retry the entire script by default" design caused out-of-sync behavior and must not be reintroduced.
 
 ## Development Commands
 
 ### Setup
 ```bash
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Install external dependency
+pip install -r requirements.txt   # includes py-ptsl==301.0.0
 brew install sox
 
 # Generate test audio fixtures
@@ -100,146 +108,81 @@ sox -n -r 48000 -b 24 48000_24bit.wav trim 0 5
 
 ### Testing
 ```bash
-# Run all tests
-pytest
-
-# Run specific test file
-pytest tests/test_audio_analyzer.py
-
-# Run with verbose output
-pytest -v
-
-# Run tests matching pattern
-pytest -k "test_analyze"
+pytest                      # all tests
+pytest tests/test_ptsl_workflow.py
+pytest -v -k "test_analyze"
 ```
 
 ### Running
 ```bash
-# Run application
-python3 src/main.py
+python3 src/main.py           # run application
+python3 src/main.py --debug   # verbose logging
+```
 
-# Run with debug mode (verbose logging, screenshots)
-python3 src/main.py --debug
+### Live validation prototypes (require running Pro Tools)
+```bash
+venv/bin/python prototypes/ptsl_probe.py              # read-only connection probe
+venv/bin/python prototypes/ptsl_prototype.py          # create→import template→save→close
+venv/bin/python prototypes/ptsl_audio_import_spike.py # validate import_audio (untested on v3)
 ```
 
 ## Testing Notes
 
-**Unit Tests**: Core logic only (AudioAnalyzer, FolderScanner, PathResolver, Validator)
+**Unit Tests**: Core logic, queue, and the PTSL workflow with a mocked engine — no Pro Tools needed.
 
-**Integration Tests**: Queue management with mocked Pro Tools workflow
+**Manual Tests Required**: Live PTSL behavior and the two AppleScripts must be tested with real Pro Tools.
 
-**Manual Tests Required**: All AppleScript automation must be tested with real Pro Tools. Cannot be automated due to UI scripting nature.
+**Test Data Location**: `tests/fixtures/` — sample WAVs at different rates.
 
-**Test Data Location**: `tests/fixtures/` - Contains sample WAV files at different sample rates for testing validation
-
-**Testing Output**: `testing/` directory in project root - prevents accidentally creating sessions in production audio drives
+**Testing Output**: `testing/` directory in project root — prevents accidentally creating sessions in production audio drives.
 
 ## Key Design Decisions
 
-1. **Serial Queue Execution**: Pro Tools UI scripting is stateful - only one session can be automated at a time. Parallel execution would cause race conditions and click wrong UI elements.
-
-2. **Python Owns Logic**: All validation, path resolution, queue management in Python (testable). Pro Tools only does minimum (create, import, save).
-
-3. **Fail-Safe Over Fast**: Generous timeouts, explicit waits, verification steps. Corrupted sessions worse than slow execution.
-
-4. **Configurable Timing**: `AppSettings` has tunable delays (`dialog_wait_time`, `import_completion_timeout`) because different systems have different speeds.
-
-5. **No Track Manipulation (v1)**: Track naming, routing, color coding explicitly out of scope. Focus on core workflow reliability first.
-
-## Error Handling
-
-### Exception Hierarchy
-```
-PTSessionBuilderError (base)
-├── AudioAnalysisError
-│   └── SampleRateMismatchError  # Different sample rates in folder
-├── AppleScriptError              # UI scripting failed
-├── JobExecutionError             # Workflow step failed
-└── ValidationError               # Invalid session spec
-```
-
-### Error Recovery
-- **User Errors** (sample rate mismatch): Friendly message, mark job failed, continue queue
-- **System Errors** (sox missing): Technical instructions, halt queue
-- **Pro Tools Errors** (timeout): Retry with backoff OR mark job failed, continue queue
-- **Cleanup**: `workflow_steps.cleanup_on_error()` presses Escape to close dialogs, then closes session
+1. **Serial Queue Execution**: One session at a time; parallel PTSL commands wedge Pro Tools.
+2. **Python Owns Logic**: All validation, path resolution, queue management in Python (testable). Pro Tools does the minimum (create, import, save).
+3. **Fail-Safe Over Fast**: `ensure_ready()` + settle pacing between steps; postcondition verification (e.g. track count after template import) over optimistic success.
+4. **Configurable Timing**: `AppSettings` — `ptsl_settle_time`, `ptsl_connect_timeout`, `save_poll_timeout`, plus `dialog_wait_time`/`midi_import_timeout` for the surviving scripts.
+5. **No Track Manipulation (v1)**: Track naming, routing, color coding out of scope.
 
 ## Critical Risks
 
 | Risk | Why Critical | Mitigation |
 |------|-------------|-----------|
-| "Apply SRC" checkbox | Degrades audio quality | Verify checkbox value after setting, log it, fail if can't disable |
-| Timing issues | AppleScript races | Poll for conditions (never fixed delays), configurable timeouts |
-| Path with spaces | AppleScript breaks | POSIX paths, proper escaping, test edge cases |
-| Accessibility perms | All automation fails silently | Check on startup, show instructions |
-| User touches Pro Tools | Automation clicks wrong thing | Warning in UI, focus lock, state verification |
+| Modal dialog blocks PTSL | Every command returns 106 | Dialog supervisor at checkpoints and on any 106 |
+| Rapid cycling wedges PT | Force-quit required | ensure_ready + settle between steps |
+| Unknown dialog | Automation stalls | Supervisor never dismisses blind; fails with a diagnosable `DialogBlockedError` |
+| Accessibility perms | MIDI import + supervisor fail | Check on startup, show instructions |
+| Sample-rate conversion | Degrades audio | Pre-validated rates; PTSL import parameters never apply SRC implicitly |
 
 ## Folder Structure Logic
 
 Two modes based on "Is this part of a larger project?" checkbox:
 
-**Single Song Mode**: One-off track or learning project
-```
-{root}/
-  {Artist}/
-    {Song}/
-      {Song}.ptx
-      Audio Files/
-      Session File Backups/
-      ...
-```
+**Single Song Mode**: `{root}/{Artist}/{Song}/{Song}.ptx`
+**Album/EP Mode**: `{root}/{Artist}/{Project}/{Song}/{Song}.ptx`
 
-**Album/EP Mode**: Multiple songs in same project
-```
-{root}/
-  {Artist}/
-    {Project}/
-      {Song1}/
-        {Song1}.ptx
-        ...
-      {Song2}/
-        {Song2}.ptx
-        ...
-```
-
-Pro Tools auto-creates: Audio Files, Bounced Files, Clip Groups, Session File Backups, Video Files, WaveCache.wfm
+PTSL's `create_session(name, parent)` creates `{parent}/{name}/{name}.ptx`, which matches PathResolver's layout exactly (output_dir basename == session name). Pro Tools auto-creates: Audio Files, Bounced Files, Clip Groups, Session File Backups, Video Files, WaveCache.wfm.
 
 ## Settings Persistence
 
-`AppSettings` saves to JSON in user home directory (`~/.protools_session_builder_settings.json`).
-
-For testing: Default root output is `{workspace}/testing/` to prevent polluting production audio drives.
+`AppSettings` saves to JSON in user home directory (`~/.protools_session_builder_settings.json`). `load()` tolerates unknown/legacy keys. Default root output is `{workspace}/testing/` to prevent polluting production audio drives.
 
 ## Workflow Execution Order (MUST NOT CHANGE)
 
 The JobExecutor follows this exact 9-step sequence:
 
-1. **Validate** (5%): Check SessionSpec for errors
-2. **Create Output Dir** (10%): Make folder structure
-3. **Launch Pro Tools** (20%): Activate app, wait for Dashboard
-4. **Create Session** (30%): Use Dashboard with detected sample rate/bit depth
-5. **Import Audio** (50%): File → Import → Audio, disable SRC
-6. **Import MIDI** (70%): File → Import → MIDI, enable tempo/key import
-7. **Import Template** (85%): File → Import → Session Data, disable SRC, dismiss warning
-8. **Save Session** (95%): File → Save Session
-9. **Complete** (100%): Close session
+1. **Validate** (5%): Check SessionSpec for errors (Python)
+2. **Create Output Dir** (10%): Ensure parent directory (Python)
+3. **Launch Pro Tools** (20%): Probe/launch, poll PTSL endpoint, ensure_ready
+4. **Create Session** (30%): PTSL builder (int Hz sample rate); verify open session name
+5. **Import Audio** (50%): PTSL import_audio, CopyAudio + MD_NewTrack (⚠️ validate live via spike before first production batch)
+6. **Import MIDI** (70%): AppleScript fallback (skipped if no MIDI)
+7. **Import Template** (85%): PTSL import_data + timecode quirk + supervisor sweep + track-count verify
+8. **Save Session** (95%): PTSL save; poll for .ptx on disk
+9. **Complete** (100%): PTSL close + supervisor sweep
 
-Each step has progress callback for UI updates. Steps cannot be reordered - MIDI must come after audio to prevent dialog overlap.
+## AppleScript (surviving scripts only)
 
-## AppleScript Script Templates
+Location: `src/protools/scripts/` — `import_midi.applescript`, `dialog_supervisor.applescript`.
 
-Location: `src/protools/scripts/*.applescript`
-
-Templates use `{placeholder}` syntax that AppleScriptController substitutes before execution:
-```applescript
-tell application "System Events"
-    tell process "Pro Tools"
-        tell window "Dashboard"
-            set value of text field "Name" to "{session_name}"
-            set value of popup button "Sample Rate" to "{sample_rate}"
-        end tell
-    end tell
-end tell
-```
-
-Controller substitutes: `{session_name}` → actual song name, `{sample_rate}` → detected rate.
+Templates use `{placeholder}` syntax; `AppleScriptRunner` escapes `"` and `\` in values before substitution. Scripts return structured results (`midi-import:ok:*`, `dismissed:*`/`none`/`unknown:*`) parsed by Python — exit code alone is never trusted. `.gitattributes` pins these files to UTF-8 (Script Editor re-saves as UTF-16, which breaks template loading).

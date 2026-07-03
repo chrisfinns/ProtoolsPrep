@@ -284,10 +284,12 @@ class PTSLWorkflow:
                 self.client.engine().save_session()
 
         deadline = time.monotonic() + self.settings.save_poll_timeout
-        while time.monotonic() < deadline:
+        while True:
             if session_file.exists():
                 logger.info("Session saved: %s", session_file)
                 return
+            if time.monotonic() >= deadline:
+                break
             time.sleep(0.5)
 
         raise PTSLError(

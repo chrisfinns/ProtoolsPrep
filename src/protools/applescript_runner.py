@@ -110,9 +110,16 @@ class AppleScriptRunner:
         for encoding in encodings:
             try:
                 with open(script_path, "r", encoding=encoding) as f:
-                    return f.read()
+                    content = f.read()
             except UnicodeDecodeError as e:
                 last_error = e
+                continue
+            # BOM-less UTF-16 decodes "successfully" as UTF-8 because NUL
+            # bytes are valid UTF-8 - detect the garbage and try the next
+            # encoding instead.
+            if "\x00" in content:
+                continue
+            return content
         raise AppleScriptError(
             f"Failed to read script {script_path.name} with any supported encoding. "
             f"Last error: {last_error}"
