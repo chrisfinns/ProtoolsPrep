@@ -18,7 +18,7 @@ This ensures continuity across sessions and prevents lost context.
 
 ## Project Overview
 
-Pro Tools Session Builder - A macOS desktop application (Python 3.11+ with PySide6) that batch-processes song folders, analyzes audio specs using sox/soxi, and automates Pro Tools session creation via **PTSL** (Pro Tools Scripting Library, Avid's official gRPC API — v3 in Pro Tools 2024.3).
+Pro Tools Session Builder - A macOS desktop application (Python 3.11+ with PySide6) that batch-processes song folders, analyzes audio specs via libsndfile (soundfile package), and automates Pro Tools session creation via **PTSL** (Pro Tools Scripting Library, Avid's official gRPC API — v3 in Pro Tools 2024.3).
 
 **Automation strategy**: PTSL is the primary path (typed commands, typed errors, no UI races). Exactly **two** guarded AppleScripts survive because PTSL v3 has no equivalent:
 1. `import_midi.applescript` — MIDI import
@@ -43,7 +43,7 @@ FolderScanner → AudioAnalyzer → SessionSpec → Job → JobExecutor
 ### Layer Responsibilities
 
 **Core Layer** (`src/core/`)
-- `AudioAnalyzer`: Wraps sox/soxi shell commands, validates all audio files in folder have matching sample rate/bit depth
+- `AudioAnalyzer`: Reads specs via libsndfile (`soundfile` — bundled in the wheel, no external tools), validates all audio files in folder have matching sample rate/bit depth
 - `FolderScanner`: Filters files by extension (.wav/.aif for audio, .mid for MIDI), skips hidden/unsupported files
 - `PathResolver`: Computes output paths - Single song: `{root}/{Artist}/{Song}/` vs Album: `{root}/{Artist}/{Project}/{Song}/`
 - `SessionSpec`: Immutable data model holding all session parameters (detected sample rate, file lists, output paths)
@@ -99,10 +99,9 @@ On `SessionBlockedError` (106): run dialog supervisor sweep → verify actual st
 
 ### Setup
 ```bash
-pip install -r requirements.txt   # includes py-ptsl==301.0.0
-brew install sox
+pip install -r requirements.txt   # includes py-ptsl==301.0.0 and soundfile
 
-# Generate test audio fixtures
+# Regenerate test audio fixtures if ever needed (sox only used for this)
 cd tests/fixtures
 sox -n -r 44100 -b 16 44100_16bit.wav trim 0 5
 sox -n -r 48000 -b 24 48000_24bit.wav trim 0 5

@@ -254,7 +254,7 @@ class SettingsDialog(QDialog):
     def _on_restore_defaults(self):
         """Restore default settings."""
         defaults = AppSettings()
-        defaults.root_output_dir = str(Path.cwd() / "testing")
+        defaults.root_output_dir = str(AppSettings.default_root_output_dir())
 
         # Load defaults into UI
         self.output_dir_input.setText(defaults.root_output_dir or "")

@@ -54,11 +54,33 @@ The automation layer was rebuilt on **PTSL** (official Pro Tools gRPC API) per
 ## 🎯 Next Up — remaining live tests (manual)
 
 1. [ ] **One real job end-to-end from the app UI** — audio + template into `testing/`
-       (PACE activation windows now auto-Quit; verify hands-off)
+       (PACE activation windows now auto-Quit; verify hands-off) — use the
+       **bundled app** now so the test covers distribution
 2. [ ] **Restart recovery** — quit Pro Tools mid-idle, verify next job relaunches
        and reconnects
 3. [ ] **MIDI import** — job with .mid files; verify hardened script + tempo/key options
 4. [ ] **Multi-job soak** — 3+ jobs, mixed sample rates, with/without template/MIDI
+
+## 📦 App bundle (2026-07-04) — built & smoke-tested
+
+`venv/bin/pyinstaller "Pro Tools Session Builder.spec" --noconfirm` →
+`dist/Pro Tools Session Builder.app` (~131 MB, arm64). Launches from Finder,
+logs to `~/Library/Logs/Pro Tools Session Builder.log`.
+
+Bundle-readiness fixes that made it work:
+- log file moved from cwd (unwritable `/` when Finder-launched) to ~/Library/Logs
+- default output dir: `./testing` in a dev checkout, else `~/Documents/Pro Tools Sessions`
+- **sox dependency removed entirely** — AudioAnalyzer now uses `soundfile`
+  (libsndfile ships inside the wheel/bundle). No brew installs needed by users.
+- spec bundles the two .applescript files; Info.plist has bundle name/ID +
+  NSAppleEventsUsageDescription (proper Automation permission prompt)
+
+Handing to another user — they need:
+- Apple Silicon Mac (this build is arm64-only)
+- Pro Tools **2024.3** (PTSL v3 — py-ptsl 301 is version-locked; see maintenance note)
+- First run: right-click → Open (app is ad-hoc signed, not notarized), then
+  grant Accessibility + Automation (System Events) when prompted
+- Their own template path + output dir in Settings
 
 ## 🎨 UI modernization (plan §9) — ✅ done (commit af9d42f + follow-ups)
 

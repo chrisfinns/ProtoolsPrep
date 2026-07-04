@@ -19,9 +19,12 @@ class TestAudioAnalyzer:
         """Get fixtures directory path."""
         return Path(__file__).parent / "fixtures"
 
-    def test_sox_installed(self, analyzer):
-        """Test that sox is installed and detected."""
-        assert analyzer._is_sox_installed()
+    def test_bit_depth_subtype_mapping(self):
+        """libsndfile subtypes map to the bit depths Pro Tools cares about."""
+        from src.core.audio_analyzer import _bit_depth_from_subtype
+        assert _bit_depth_from_subtype("PCM_16") == 16
+        assert _bit_depth_from_subtype("PCM_24") == 24
+        assert _bit_depth_from_subtype("FLOAT") == 32
 
     def test_analyze_file_not_found(self, analyzer):
         """Test analyzing non-existent file raises error."""

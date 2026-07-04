@@ -19,6 +19,18 @@ from src.protools.accessibility import (
 from src.ui import AppController, MainWindow
 
 
+def get_log_path() -> Path:
+    """Log file location that works from a Finder-launched .app bundle.
+
+    A bundled app's cwd is "/" (unwritable), so a relative log path would
+    crash logging setup. ~/Library/Logs is the macOS convention and shows
+    up in Console.app.
+    """
+    log_dir = Path.home() / "Library" / "Logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir / "Pro Tools Session Builder.log"
+
+
 def setup_logging(debug: bool = False):
     """Configure logging for the application.
 
@@ -33,7 +45,7 @@ def setup_logging(debug: bool = False):
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
             logging.StreamHandler(sys.stdout),
-            logging.FileHandler("protools_session_builder.log"),
+            logging.FileHandler(get_log_path()),
         ],
     )
 

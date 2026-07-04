@@ -1,16 +1,33 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_all
+"""PyInstaller spec for the Pro Tools Session Builder .app bundle.
 
-datas = []
+Build:  venv/bin/pyinstaller "Pro Tools Session Builder.spec" --noconfirm
+Output: dist/Pro Tools Session Builder.app
+
+Notes:
+- The two surviving AppleScripts must ship inside the bundle at the same
+  relative path the code resolves (Path(__file__).parent / "scripts" in
+  src/protools/applescript_runner.py).
+- The app talks to Pro Tools over PTSL (gRPC, localhost:31416) and to
+  System Events via osascript - the Info.plist usage strings below make
+  macOS show proper Automation/Accessibility permission prompts for the
+  bundle on first run.
+- End-user machine requirements: Pro Tools 2024.3 (PTSL v3), sox
+  (brew install sox), and Accessibility permission granted to this app.
+"""
+
+# PyInstaller's PySide6 hook bundles the Qt modules the code actually
+# imports (Widgets/Gui/Core) - collect_all("PySide6") would drag in all
+# of Qt (WebEngine, 3D, ...) and triple the bundle size.
+datas = [
+    ("src/protools/scripts/*.applescript", "src/protools/scripts"),
+]
 binaries = []
 hiddenimports = []
-tmp_ret = collect_all('PySide6')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-
 
 a = Analysis(
-    ['src/main.py'],
-    pathex=[],
+    ["src/main.py"],
+    pathex=[SPECPATH],  # project root, so "from src...." imports resolve
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
@@ -28,11 +45,11 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='Pro Tools Session Builder',
+    name="Pro Tools Session Builder",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -45,13 +62,25 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
-    name='Pro Tools Session Builder',
+    name="Pro Tools Session Builder",
 )
 app = BUNDLE(
     coll,
-    name='Pro Tools Session Builder.app',
+    name="Pro Tools Session Builder.app",
     icon=None,
-    bundle_identifier=None,
+    bundle_identifier="com.protoolsprepper.sessionbuilder",
+    info_plist={
+        "CFBundleName": "Pro Tools Session Builder",
+        "CFBundleDisplayName": "Pro Tools Session Builder",
+        "CFBundleShortVersionString": "1.0.0",
+        "CFBundleVersion": "1.0.0",
+        "NSHighResolutionCapable": True,
+        "LSApplicationCategoryType": "public.app-category.music",
+        "NSAppleEventsUsageDescription": (
+            "Pro Tools Session Builder automates Pro Tools dialogs and MIDI "
+            "import via System Events."
+        ),
+    },
 )

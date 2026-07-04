@@ -61,15 +61,28 @@ class AppSettings:
         """Get the path to the settings file in user's home directory."""
         return Path.home() / ".protools_session_builder_settings.json"
 
+    @staticmethod
+    def default_root_output_dir() -> Path:
+        """Default sessions root when the user hasn't chosen one.
+
+        In a development checkout, ./testing exists and wins - it keeps test
+        jobs off production audio drives. A bundled .app is launched from
+        Finder with cwd "/" where no such directory exists, so fall back to
+        a sensible per-user location.
+        """
+        dev_testing = Path.cwd() / "testing"
+        if dev_testing.is_dir():
+            return dev_testing
+        return Path.home() / "Documents" / "Pro Tools Sessions"
+
     @classmethod
     def load(cls) -> "AppSettings":
         """Load settings from JSON file, or return defaults if file doesn't exist."""
         settings_path = cls.get_settings_path()
 
         if not settings_path.exists():
-            # Return defaults with testing directory as root
             settings = cls()
-            settings.root_output_dir = str(Path.cwd() / "testing")
+            settings.root_output_dir = str(cls.default_root_output_dir())
             return settings
 
         try:
@@ -84,7 +97,7 @@ class AppSettings:
             print(f"Warning: Could not load settings from {settings_path}: {e}")
             print("Using default settings.")
             settings = cls()
-            settings.root_output_dir = str(Path.cwd() / "testing")
+            settings.root_output_dir = str(cls.default_root_output_dir())
             return settings
 
     def save(self) -> None:
@@ -101,11 +114,11 @@ class AppSettings:
         """Get the root output directory as a Path object.
 
         Returns:
-            Path to root output directory (defaults to ./testing if not set)
+            Path to root output directory (see default_root_output_dir)
         """
         if self.root_output_dir:
             return Path(self.root_output_dir)
-        return Path.cwd() / "testing"
+        return self.default_root_output_dir()
 
     def get_last_template_path(self) -> Optional[Path]:
         """Get the last used template path as a Path object.

@@ -1,10 +1,17 @@
-"""Audio file analysis using sox/soxi shell commands."""
+"""Audio file analysis via libsndfile (the soundfile package).
 
-import subprocess
-import shutil
+soundfile ships libsndfile inside its wheel, so this works from a
+PyInstaller .app bundle with no external tools installed - it replaced
+the original sox/soxi subprocess approach, which required a Homebrew
+install and broke under a Finder-launched app's bare PATH.
+"""
+
+import re
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 from dataclasses import dataclass
+
+import soundfile as sf
 
 from .exceptions import AudioAnalysisError, SampleRateMismatchError
 
@@ -18,23 +25,31 @@ class AudioSpec:
     duration: float  # seconds
 
 
+# libsndfile subtypes that don't encode their width in the name
+_SUBTYPE_BITS = {
+    "FLOAT": 32,
+    "DOUBLE": 64,
+    "PCM_S8": 8,
+    "PCM_U8": 8,
+}
+
+
+def _bit_depth_from_subtype(subtype: str) -> int:
+    """Map a libsndfile subtype (e.g. 'PCM_24') to a bit depth."""
+    if subtype in _SUBTYPE_BITS:
+        return _SUBTYPE_BITS[subtype]
+    match = re.search(r"(\d+)$", subtype)
+    if match:
+        return int(match.group(1))
+    raise AudioAnalysisError(f"Unrecognized audio subtype: {subtype}")
+
+
 class AudioAnalyzer:
-    """Wraps sox/soxi shell commands to analyze audio files."""
-
-    def __init__(self):
-        """Initialize analyzer and verify sox is installed."""
-        if not self._is_sox_installed():
-            raise AudioAnalysisError(
-                "sox is not installed. Install with: brew install sox"
-            )
-
-    def _is_sox_installed(self) -> bool:
-        """Check if soxi command is available."""
-        return shutil.which("soxi") is not None
+    """Reads audio file specs (sample rate, bit depth, channels, duration)."""
 
     def analyze_file(self, file_path: Path) -> AudioSpec:
         """
-        Analyze a single audio file using soxi.
+        Analyze a single audio file.
 
         Args:
             file_path: Path to audio file (.wav or .aif)
@@ -49,47 +64,16 @@ class AudioAnalyzer:
             raise AudioAnalysisError(f"File not found: {file_path}")
 
         try:
-            # Get sample rate
-            sample_rate = int(self._run_soxi(["-r", str(file_path)]))
-
-            # Get bit depth
-            bit_depth = int(self._run_soxi(["-b", str(file_path)]))
-
-            # Get channels
-            channels = int(self._run_soxi(["-c", str(file_path)]))
-
-            # Get duration
-            duration = float(self._run_soxi(["-D", str(file_path)]))
-
-            return AudioSpec(
-                sample_rate=sample_rate,
-                bit_depth=bit_depth,
-                channels=channels,
-                duration=duration
-            )
-        except (ValueError, subprocess.CalledProcessError) as e:
+            info = sf.info(str(file_path))
+        except (sf.LibsndfileError, RuntimeError) as e:
             raise AudioAnalysisError(f"Failed to analyze {file_path.name}: {e}")
 
-    def _run_soxi(self, args: list) -> str:
-        """
-        Execute soxi command and return output.
-
-        Args:
-            args: Command arguments for soxi
-
-        Returns:
-            Stripped stdout from command
-
-        Raises:
-            subprocess.CalledProcessError: If command fails
-        """
-        result = subprocess.run(
-            ["soxi"] + args,
-            capture_output=True,
-            text=True,
-            check=True
+        return AudioSpec(
+            sample_rate=int(info.samplerate),
+            bit_depth=_bit_depth_from_subtype(info.subtype),
+            channels=int(info.channels),
+            duration=float(info.duration),
         )
-        return result.stdout.strip()
 
     def validate_folder(self, audio_files: list[Path]) -> Dict[str, int]:
         """
