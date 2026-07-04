@@ -39,34 +39,37 @@ The automation layer was rebuilt on **PTSL** (official Pro Tools gRPC API) per
        (not linked) + new tracks created. Step 5 is PTSL, no fallback needed.
 3. [x] **Template import E2E via production PTSLWorkflow** — 87 tracks imported
        from Speed Mix Template, saved, .ptx verified on disk, closed.
-       **Major discovery**: PACE/iLok "Activation is required" dialogs (one per
-       unlicensed plugin when the iLok isn't plugged in) are INVISIBLE to
-       accessibility (DRM) — they cannot be auto-dismissed. The workflow now
-       waits up to `user_dialog_timeout` (600 s) with logged instructions while
-       the user presses Quit on each, then resumes and verifies. Also fixed:
-       supervisor no longer crashes on PACE-poisoned AX queries (-10000 →
-       "ax-error:"), and blocked track queries are never read as "zero tracks".
-4. [x] Transient 106 "Session state is already changing" right after Pro Tools
+4. [x] **PACE/iLok activation windows CAN be automated** (2026-07-04): they
+       looked invisible only because they live in their own short-lived
+       `PACEEdenExperience` helper process (one per unlicensed plugin,
+       spawned serially), not in Pro Tools. Their AX tree is fully readable —
+       `button "Quit" of group 1 of window 1`. Supervisor pass 0 now Quits
+       each automatically (validated live: EchoBoy, MicroShift, Little Plate,
+       plus the Missing AAX dialog after). Batches run unattended without the
+       iLok. Also fixed earlier: supervisor no longer crashes on AX -10000
+       ("ax-error:"), blocked track queries never read as "zero tracks".
+5. [x] Transient 106 "Session state is already changing" right after Pro Tools
        startup — handled with patient state-checked retry.
 
 ## 🎯 Next Up — remaining live tests (manual)
 
 1. [ ] **One real job end-to-end from the app UI** — audio + template into `testing/`
-       (best with iLok plugged in, or expect to Quit activation windows once)
+       (PACE activation windows now auto-Quit; verify hands-off)
 2. [ ] **Restart recovery** — quit Pro Tools mid-idle, verify next job relaunches
        and reconnects
 3. [ ] **MIDI import** — job with .mid files; verify hardened script + tempo/key options
 4. [ ] **Multi-job soak** — 3+ jobs, mixed sample rates, with/without template/MIDI
-5. [ ] Tip for batches without the iLok: consider iLok Cloud sessions for the
-       licensed plugins, so activation windows never appear
 
-## 🎨 Later — UI modernization (plan §9, independent pass)
+## 🎨 UI modernization (plan §9) — ✅ done (commit af9d42f + follow-ups)
 
-- [ ] Native macOS menu bar (remove `setNativeMenuBar(False)` properly)
-- [ ] Application-wide QSS theme
-- [ ] Real progress-bar cells + status chips in queue table
-- [ ] QSplitter layout, empty-state hint, toolbar icons
-- [ ] Per-job error tooltips; double-click completed job → reveal in Finder
+- [x] Native macOS menu bar (Settings pinned to File menu with explicit
+      menu role; in-window Settings… button added — Qt otherwise relocates
+      it to the app menu, titled "Python" when unbundled)
+- [x] Application-wide dark studio theme (`src/ui/theme.py`: Fusion + QSS +
+      palette; also fixes macOS native style clipping form fields)
+- [x] Progress-bar cells + colored status labels in queue table
+- [x] QSplitter layout, empty-state hint
+- [x] Per-job error tooltips; double-click completed job → reveal in Finder
 - [ ] Surface dialog-supervisor/PTSL step results in the log (structured results make this nearly free)
 
 ## 📌 Maintenance notes

@@ -1,6 +1,6 @@
 """Tests for dialog supervisor result parsing and sweep behavior."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -38,6 +38,16 @@ class TestCheck:
         with pytest.raises(AppleScriptError, match="unparseable"):
             supervisor.check()
 
+    def test_pace_activation_dismissed(self, supervisor, runner):
+        runner.run.return_value = (
+            "dismissed:PACE Activation - EchoBoy V5 by Soundtoys requires activation."
+        )
+        assert supervisor.check().startswith("PACE Activation - EchoBoy V5")
+
+    def test_ax_error_returns_empty(self, supervisor, runner):
+        runner.run.return_value = "ax-error:AppleEvent handler failed (-10000)"
+        assert supervisor.check() == ""
+
 
 class TestSweep:
     def test_no_dialogs(self, supervisor, runner):
@@ -62,3 +72,17 @@ class TestSweep:
         runner.run.side_effect = ["dismissed:Session Notes", "unknown:Mystery"]
         with pytest.raises(DialogBlockedError):
             supervisor.sweep(pause=0)
+
+    def test_pace_dismissals_pause_longer(self, supervisor, runner):
+        """The next PACE helper process takes seconds to spawn - the sweep
+        must wait longer after quitting one so it isn't missed."""
+        runner.run.side_effect = [
+            "dismissed:PACE Activation - EchoBoy V5 by Soundtoys requires activation.",
+            "dismissed:Missing AAX Plugins",
+            "none",
+        ]
+        with patch("src.protools.dialog_supervisor.time.sleep") as mock_sleep:
+            dismissed = supervisor.sweep(pause=1.0)
+        assert len(dismissed) == 2
+        assert mock_sleep.call_args_list[0].args == (3.0,)  # after PACE
+        assert mock_sleep.call_args_list[1].args == (1.0,)  # after plain dialog

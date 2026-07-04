@@ -45,22 +45,24 @@ class DialogSupervisor:
         if result.startswith("unknown:"):
             raise DialogBlockedError(result[len("unknown:"):])
         if result.startswith("ax-error:"):
-            # PACE/iLok DRM dialogs poison accessibility queries (-10000).
-            # We cannot inspect - and definitely cannot dismiss - so treat as
-            # "nothing we can do" and let the workflow's patient wait handle it.
+            # An AX query failed mid-pass (-10000 has been observed while a
+            # PACE window is mid-spawn). Transient - treat as "nothing to do
+            # right now"; the next sweep pass will see whatever settled.
             logger.warning(
-                "Dialog supervisor could not inspect Pro Tools windows "
-                "(likely a PACE/iLok dialog): %s", result[len("ax-error:"):],
+                "Dialog supervisor could not inspect windows this pass: %s",
+                result[len("ax-error:"):],
             )
             return ""
 
         raise AppleScriptError(f"Dialog supervisor returned unparseable result: {result!r}")
 
-    def sweep(self, max_dismissals: int = 5, pause: float = 1.0) -> List[str]:
+    def sweep(self, max_dismissals: int = 40, pause: float = 1.0) -> List[str]:
         """Dismiss whitelisted dialogs until none remain.
 
-        Dialogs can stack (e.g. Missing AAX Plugins behind Session Notes),
-        so loop - but bounded, in case a dialog reappears endlessly.
+        Dialogs can stack: Missing AAX Plugins behind Session Notes, and PACE
+        activation windows arrive one per unlicensed plugin (each a fresh
+        helper process, spawned a couple of seconds apart - hence the high
+        default bound and the longer pause after a PACE dismissal).
 
         Returns:
             Labels of all dialogs dismissed (may be empty).
@@ -74,7 +76,9 @@ class DialogSupervisor:
             if not label:
                 return dismissed
             dismissed.append(label)
-            time.sleep(pause)  # give Pro Tools a beat to surface the next one
+            # The next PACE helper process takes ~2-3s to spawn; a plain
+            # dialog just needs a beat for Pro Tools to surface the next one.
+            time.sleep(3.0 if label.startswith("PACE") else pause)
         logger.warning(
             "Dialog supervisor hit dismissal limit (%d); last: %s",
             max_dismissals,

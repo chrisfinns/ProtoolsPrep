@@ -236,9 +236,9 @@ class PTSLWorkflow:
                 imp.import_data()
 
         # Template plugins trigger dialogs during import: "Missing AAX
-        # Plugins" (auto-dismissed) and PACE/iLok activation windows, which
-        # are invisible to automation and must be Quit by hand. The helper
-        # waits for the user, verifying track count before any re-issue.
+        # Plugins" and PACE/iLok activation windows - both auto-dismissed
+        # by the supervisor sweep (PACE windows get Quit, one per unlicensed
+        # plugin). Track count is verified before any re-issue.
         self._run_blocked_tolerant(
             _import,
             verified_done=lambda: self._query_track_count() > 0,
@@ -252,8 +252,8 @@ class PTSLWorkflow:
 
         # Postcondition the old system never had: tracks actually arrived.
         # Must be blocked-aware: PACE/iLok activation windows keep every
-        # query returning 106 until the user Quits them, and a blocked
-        # query must NOT be read as "zero tracks".
+        # query returning 106 until dismissed, and a blocked query must
+        # NOT be read as "zero tracks".
         track_count = self._wait_for_track_count()
         if track_count == 0:
             raise PTSLError(
@@ -334,9 +334,11 @@ class PTSLWorkflow:
         Handles three live-observed causes of SessionBlockedError:
         - whitelisted dialogs (Missing AAX Plugins...): swept automatically
         - transient "session state is already changing": resolved by waiting
-        - PACE/iLok activation windows: INVISIBLE to accessibility (DRM) -
-          nothing can dismiss them but the user. We log clear instructions
-          and wait up to settings.user_dialog_timeout.
+        - PACE/iLok activation windows: live in their own helper process
+          (PACEEdenExperience) - the supervisor sweep answers Quit on each.
+          If the sweep can't reach them (e.g. missing accessibility
+          permission) we log instructions and wait up to
+          settings.user_dialog_timeout for the user.
 
         verified_done() is checked before every re-issue: commands rejected
         during a modal can queue and execute after dismissal, so blind
@@ -361,9 +363,10 @@ class PTSLWorkflow:
                     ) from e
                 if not warned:
                     logger.warning(
-                        "%s is blocked by Pro Tools (%s). If an iLok/PACE "
-                        "'Activation is required' window is showing, press "
-                        "Quit on each one - the job resumes automatically "
+                        "%s is blocked by Pro Tools (%s). iLok/PACE "
+                        "'Activation is required' windows are answered with "
+                        "Quit automatically; if one stays on screen, press "
+                        "Quit on it yourself - the job resumes automatically "
                         "(waiting up to %.0fs).",
                         step_name, e, self.settings.user_dialog_timeout,
                     )
@@ -403,8 +406,8 @@ class PTSLWorkflow:
         """Track count once Pro Tools answers definitively.
 
         While a PACE/iLok activation window is up every query returns 106;
-        wait for the user to dismiss them (up to user_dialog_timeout) and
-        only trust an actual track_list response.
+        the sweep dismisses them (Quit) as they appear - wait (up to
+        user_dialog_timeout) and only trust an actual track_list response.
         """
         deadline = time.monotonic() + self.settings.user_dialog_timeout
         warned = False
@@ -421,9 +424,10 @@ class PTSLWorkflow:
                     ) from e
                 if not warned:
                     logger.warning(
-                        "Track verification blocked (%s). If iLok/PACE "
-                        "'Activation is required' windows are showing, press "
-                        "Quit on each - verification resumes automatically.", e,
+                        "Track verification blocked (%s). iLok/PACE "
+                        "'Activation is required' windows are answered with "
+                        "Quit automatically; verification resumes once "
+                        "Pro Tools responds.", e,
                     )
                     warned = True
                 time.sleep(3.0)

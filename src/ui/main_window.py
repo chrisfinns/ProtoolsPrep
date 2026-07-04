@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt, Signal, Slot, QEvent, QUrl
-from PySide6.QtGui import QColor, QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QAction, QColor, QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
@@ -95,7 +95,13 @@ class MainWindow(QMainWindow):
         layout.addWidget(splitter, stretch=1)
 
     def _create_menu_bar(self):
-        """Create application menu bar (native macOS menu bar)."""
+        """Create application menu bar (native macOS menu bar).
+
+        On macOS, Qt relocates Settings/Quit into the application menu
+        (titled "Python" when running unbundled), which would leave File
+        empty and hidden. Set the roles explicitly and keep a File menu
+        entry for Settings so it stays discoverable.
+        """
         menu_bar = self.menuBar()
 
         # File menu
@@ -103,12 +109,14 @@ class MainWindow(QMainWindow):
 
         settings_action = file_menu.addAction("&Settings...")
         settings_action.setShortcut("Cmd+,")
+        settings_action.setMenuRole(QAction.MenuRole.NoRole)
         settings_action.triggered.connect(self._open_settings_dialog)
 
         file_menu.addSeparator()
 
         quit_action = file_menu.addAction("&Quit")
         quit_action.setShortcut("Cmd+Q")
+        quit_action.setMenuRole(QAction.MenuRole.QuitRole)
         quit_action.triggered.connect(self.close)
 
     def _create_job_form_section(self) -> QGroupBox:
@@ -202,12 +210,15 @@ class MainWindow(QMainWindow):
         self.clear_queue_btn.clicked.connect(self._on_clear_queue)
         self.remove_job_btn = QPushButton("Remove Selected")
         self.remove_job_btn.clicked.connect(self._on_remove_job)
+        self.settings_btn = QPushButton("Settings…")
+        self.settings_btn.clicked.connect(self._open_settings_dialog)
 
         button_layout.addWidget(self.start_queue_btn)
         button_layout.addWidget(self.pause_queue_btn)
         button_layout.addStretch()
         button_layout.addWidget(self.remove_job_btn)
         button_layout.addWidget(self.clear_queue_btn)
+        button_layout.addWidget(self.settings_btn)
 
         layout.addLayout(button_layout)
 

@@ -11,10 +11,14 @@
 --     worth keeping; "Don't Save" would discard imported data.
 --   * Modal dialogs make ALL PTSL commands return PT_NoOpenedSession (106),
 --     so Python calls this on every 106 and after import/close.
---   * PACE/iLok "Activation is required" dialogs are INVISIBLE to the
---     accessibility tree (DRM) and may poison AX queries entirely
---     (-10000 errors, reported as "ax-error:"). They cannot be dismissed
---     here - the workflow waits for the user to press Quit manually.
+--   * PACE/iLok "Activation is required" windows do NOT belong to the
+--     Pro Tools process - each one is a short-lived helper process named
+--     "PACEEdenExperience" (one per unlicensed plugin, spawned serially).
+--     Querying Pro Tools for them finds nothing, and can even fail with
+--     -10000 while one is up (reported as "ax-error:"). Their own AX tree
+--     is fully readable: the Quit button lives in group 1 of window 1.
+--     We always answer Quit - never Activate/Try (those start license
+--     flows that need the user's iLok account).
 
 on collectText(w)
 	tell application "System Events"
@@ -49,6 +53,34 @@ end run
 
 on supervise()
 	tell application "System Events"
+		----------------------------------------------------------
+		-- Pass 0: PACE/iLok activation windows (own process, not
+		-- Pro Tools). Quit skips loading the unlicensed plugin -
+		-- exactly what a user without their iLok does by hand.
+		----------------------------------------------------------
+		if (exists process "PACEEdenExperience") then
+			tell process "PACEEdenExperience"
+				if (exists window 1) then
+					set w to window 1
+					set productInfo to ""
+					try
+						set productInfo to description of static text 1 of w
+					end try
+					try
+						click button "Quit" of group 1 of w
+						return "dismissed:PACE Activation - " & productInfo
+					end try
+					try
+						click button "Quit" of w
+						return "dismissed:PACE Activation - " & productInfo
+					end try
+					-- Window exists but no Quit button we can reach:
+					-- report it rather than guessing.
+					return "unknown:PACE Activation - " & productInfo
+				end if
+			end tell
+		end if
+
 		if not (exists process "Pro Tools") then return "none"
 		tell process "Pro Tools"
 			if not (exists window 1) then return "none"
