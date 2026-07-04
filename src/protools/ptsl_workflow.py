@@ -31,7 +31,11 @@ from src.core.exceptions import (
 )
 from src.protools.applescript_runner import AppleScriptRunner
 from src.protools.dialog_supervisor import DialogSupervisor
-from src.protools.ptsl_client import PTSLClient
+from src.protools.ptsl_client import (
+    CLIENT_PTSL_VERSION,
+    PTSLClient,
+    describe_ptsl_version,
+)
 from src.protools.settings import AppSettings
 
 logger = logging.getLogger(__name__)
@@ -71,6 +75,7 @@ class PTSLWorkflow:
         """
         if self.client.is_endpoint_up():
             self.client.ensure_ready()
+            self._log_ptsl_version()
             return
 
         logger.info("PTSL endpoint down; launching Pro Tools")
@@ -83,6 +88,7 @@ class PTSLWorkflow:
         while time.monotonic() < deadline:
             if self.client.is_endpoint_up():
                 self.client.ensure_ready()
+                self._log_ptsl_version()
                 return
             time.sleep(3.0)
 
@@ -90,6 +96,15 @@ class PTSLWorkflow:
             f"Pro Tools PTSL endpoint did not come up within "
             f"{self.settings.ptsl_connect_timeout:.0f}s of launch"
         )
+
+    def _log_ptsl_version(self) -> None:
+        """Record which PTSL version this Pro Tools speaks (support aid)."""
+        version = self.client.server_ptsl_version
+        if version is not None:
+            logger.info(
+                "Pro Tools speaks %s; app client is v%d",
+                describe_ptsl_version(version), CLIENT_PTSL_VERSION,
+            )
 
     # ------------------------------------------------------------------
     # Protocol: create_session

@@ -77,7 +77,11 @@ Bundle-readiness fixes that made it work:
 
 Handing to another user — they need:
 - Apple Silicon Mac (this build is arm64-only)
-- Pro Tools **2024.3** (PTSL v3 — py-ptsl 301 is version-locked; see maintenance note)
+- Pro Tools **2024.3 or newer** (the PTSL server is backward compatible with
+  the bundled v3 client; the app probes the server version at connect and
+  shows a readable error only if Pro Tools is *older*). Their first run on a
+  newer Pro Tools doubles as the live backward-compat validation — typed
+  error handling fails loudly and safely if a command shifted.
 - First run: right-click → Open (app is ad-hoc signed, not notarized), then
   grant Accessibility + Automation (System Events) when prompted
 - Their own template path + output dir in Settings
@@ -96,9 +100,11 @@ Handing to another user — they need:
 
 ## 📌 Maintenance notes
 
-- **py-ptsl is pinned to 301.0.0** (matches Pro Tools 2024.3 / PTSL v3). When Pro
-  Tools is upgraded, bump in lockstep: 401=2024.6, 500=2024.10, 60x=2025.6+ — and
-  re-check whether the `ptsl_compat` shim is still needed.
+- **py-ptsl is pinned to 301.0.0** (PTSL v3 = Pro Tools 2024.3). The pin is
+  one-directional: newer Pro Tools accepts v3 commands (backward compatible);
+  only *older* Pro Tools is rejected — with a clear message via the connect-time
+  version probe in `ptsl_client.py`. Bump py-ptsl only to gain new commands
+  (401=2024.6, 500=2024.10, 60x=2025.6+) and re-check the `ptsl_compat` shim.
 - **Template path pre-flight**: the saved template path broke once when the file
   moved (iCloud). Consider a "template missing" check in the UI before queueing.
 - `applescript_tests/` contains the old UI-scripting test harness — historical

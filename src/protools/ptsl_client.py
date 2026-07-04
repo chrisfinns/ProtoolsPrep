@@ -21,6 +21,7 @@ from typing import Optional
 from src.protools import ptsl_compat  # noqa: F401  (must precede ptsl import)
 
 import grpc
+from ptsl.client import PTSL_VERSION as CLIENT_PTSL_VERSION
 from ptsl.engine import Engine
 from ptsl.errors import CommandError
 
@@ -41,6 +42,26 @@ PT_INVALID_PARAMETER = 126
 COMPANY_NAME = "Pro Tools Prepper"
 APPLICATION_NAME = "Pro Tools Session Builder"
 
+# PTSL protocol version -> approximate Pro Tools release. The server is
+# backward compatible with older clients (each request carries the client's
+# version in its header), so the pin only bites when Pro Tools is OLDER
+# than the bundled client.
+PTSL_VERSION_RELEASES = {
+    1: "2023.3",
+    2: "2023.12",
+    3: "2024.3",
+    4: "2024.6",
+    5: "2024.10",
+}
+
+
+def describe_ptsl_version(version: int) -> str:
+    """Human-readable name for a PTSL protocol version."""
+    release = PTSL_VERSION_RELEASES.get(version)
+    if release:
+        return f"PTSL v{version} (~Pro Tools {release})"
+    return f"PTSL v{version} (newer than this build was tested with)"
+
 
 class PTSLClient:
     """Owns the PTSL Engine connection for the app.
@@ -51,6 +72,7 @@ class PTSLClient:
     def __init__(self, settings: AppSettings):
         self.settings = settings
         self._engine: Optional[Engine] = None
+        self.server_ptsl_version: Optional[int] = None
 
     @property
     def address(self) -> str:
@@ -77,7 +99,50 @@ class PTSLClient:
                     f"Cannot reach Pro Tools PTSL endpoint at {self.address}: "
                     f"{e.code().name if hasattr(e, 'code') else e}"
                 ) from e
+            self._check_server_version()
         return self._engine
+
+    def _check_server_version(self) -> None:
+        """Probe the server's PTSL version and gate on "server too old".
+
+        The server honors requests from older clients (backward compatible),
+        so a NEWER Pro Tools is fine - only an older one cannot understand
+        this client. The probe itself must never block connection: a modal
+        dialog can make it fail (106) even though Pro Tools is healthy.
+
+        Raises:
+            PTSLError: Pro Tools is older than the bundled client supports.
+        """
+        try:
+            self.server_ptsl_version = self._engine.ptsl_version()
+        except Exception as e:
+            logger.warning(
+                "Could not determine Pro Tools PTSL version (%s) - "
+                "proceeding without the compatibility check", e,
+            )
+            self.server_ptsl_version = None
+            return
+
+        if self.server_ptsl_version < CLIENT_PTSL_VERSION:
+            required = PTSL_VERSION_RELEASES.get(CLIENT_PTSL_VERSION, "?")
+            raise PTSLError(
+                f"This app requires Pro Tools {required} or newer "
+                f"(PTSL v{CLIENT_PTSL_VERSION}); this Pro Tools speaks "
+                f"{describe_ptsl_version(self.server_ptsl_version)}. "
+                f"Please update Pro Tools."
+            )
+        if self.server_ptsl_version > CLIENT_PTSL_VERSION:
+            logger.info(
+                "Pro Tools speaks %s - newer than this app's client "
+                "(v%d). PTSL is backward compatible; proceeding.",
+                describe_ptsl_version(self.server_ptsl_version),
+                CLIENT_PTSL_VERSION,
+            )
+        else:
+            logger.info(
+                "Pro Tools speaks %s - matches this app's client.",
+                describe_ptsl_version(self.server_ptsl_version),
+            )
 
     def invalidate(self) -> None:
         """Drop the cached engine; the next engine() call reconnects."""
@@ -87,6 +152,9 @@ class PTSLClient:
             except Exception:
                 pass  # channel may already be dead
             self._engine = None
+            # A reconnect may be to a different Pro Tools (e.g. after an
+            # upgrade) - re-probe on next connect.
+            self.server_ptsl_version = None
             logger.info("PTSL engine invalidated; will reconnect on next use")
 
     def is_endpoint_up(self) -> bool:
@@ -95,7 +163,13 @@ class PTSLClient:
             # We think we're connected - verify with a lightweight command.
             try:
                 with self.translate_errors():
-                    self._engine.ptsl_version()
+                    version = self._engine.ptsl_version()
+                if self.server_ptsl_version is None:
+                    # Connect-time probe was blocked; record it now.
+                    self.server_ptsl_version = version
+                    logger.info(
+                        "Pro Tools speaks %s", describe_ptsl_version(version)
+                    )
                 return True
             except ProToolsNotRunningError:
                 pass  # engine already invalidated; fall through to fresh probe
